@@ -4,7 +4,7 @@
   "description": "Vouchsafe Decentralized Identity and Trust Verification module",
   "main": "src/index.mjs",
   "repository": "github:ionzero/vouchsafe-js",
-  "homepage": "https://github.com/ionzero/vouchsafe-js",
+  "homepage": "https://github.com/ionzero/vouchsafe",
   "scripts": {
     "test": "cd test; mocha ."
   },

@@ -1,10 +1,11 @@
 # Vouchsafe JS
 
-A minimal JavaScript/Node.js implementation of the Vouchsafe decentralized identity
+A minimal JavaScript/Node.js implementation of the
+[Vouchsafe](https://github.com/ionzero/vouchsafe) decentralized identity
 and trust verification system.
 
-It provides tools for generating Vouchsafe identities, issuing Vouchsafe JWT tokens,
-creating vouches/revocations, and verifying trust chains.
+It provides tools for generating Vouchsafe identities, issuing Vouchsafe JWT
+tokens, creating vouches/revocations, and verifying trust chains.
 
 ## Installation
 
@@ -110,3 +111,5 @@ The test suite uses Mocha and demonstrates usage patterns found in test/basic.mj
 
 This project is distributed under the BSD 3-Clause License.
 See the [LICENSE](./LICENSE) file for details.
+
+© 2025 Jay Kuri / Ionzero.
