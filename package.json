@@ -1,0 +1,27 @@
+{
+  "name": "vouchsafe",
+  "version": "1.0.0",
+  "description": "Vouchsafe Decentralized Identity and Trust Verification module",
+  "main": "index.mjs",
+  "scripts": {
+    "test": "mocha"
+  },
+  "keywords": [
+    "identity",
+    "trust",
+    "jwt",
+    "jsonwebtoken",
+    "verification",
+    "security",
+    "vouchsafe"
+  ],
+  "author": "Jay Kuri",
+  "license": "MIT",
+  "dependencies": {
+    "base32": "^0.0.7",
+    "jose": "^6.0.10"
+  },
+  "devDependencies": {
+    "mocha": "^11.2.2"
+  }
+}
