@@ -1,14 +1,13 @@
+// crypto/index.mjs
+import * as nodeImpl from './node.mjs';
+import * as browserImpl from './browser.mjs';
+
 const isNode =
   typeof process !== 'undefined' &&
   process.versions?.node &&
   typeof window === 'undefined';
 
-let cryptoImpl;
-if (isNode) {
-  cryptoImpl = await import('./node.mjs');
-} else {
-  cryptoImpl = await import('./browser.mjs');
-}
+const cryptoImpl = isNode ? nodeImpl : browserImpl;
 
 export const {
   generateKeyPair,

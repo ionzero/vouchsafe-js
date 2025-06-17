@@ -1,5 +1,4 @@
 import { generateKeyPairSync, createSign, createVerify, createHash } from 'node:crypto';
-import { Buffer } from 'node:buffer';
 
 export async function generateKeyPair() {
   const { publicKey, privateKey } = generateKeyPairSync('ed25519');

@@ -2,15 +2,11 @@
   "name": "vouchsafe",
   "version": "1.0.0",
   "description": "Vouchsafe Decentralized Identity and Trust Verification module",
-  "main": "src/index.mjs",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/ionzero/vouchsafe-js.git"
   },
   "homepage": "https://github.com/ionzero/vouchsafe",
-  "scripts": {
-    "test": "cd test; mocha ."
-  },
   "keywords": [
     "identity",
     "trust",
@@ -22,11 +18,26 @@
   ],
   "author": "Jay Kuri",
   "license": "BSD-3-Clause",
+  "exports": {
+    "import": "./src/index.mjs",
+    "require": "./dist/index.cjs",
+    "default": "./src/index.mjs"
+  },
+  "main": "./dist/index.cjs",
+  "scripts": {
+    "build": "rollup -c",
+    "prepublishOnly": "npm run build",
+    "test": "cd test ; mocha ."
+  },
   "dependencies": {
     "base32": "^0.0.7",
     "jose": "^6.0.10"
   },
   "devDependencies": {
-    "mocha": "^11.2.2"
+    "@rollup/plugin-commonjs": "^28.0.6",
+    "@rollup/plugin-json": "^6.1.0",
+    "@rollup/plugin-node-resolve": "^16.0.1",
+    "mocha": "^11.2.2",
+    "rollup": "^4.43.0"
   }
 }
