@@ -22,6 +22,7 @@ import {
   createVouchToken,
   verifyTrustChain
 } from 'vouchsafe';
+// or const { ... } = require('vouchsafe');
 
 // create identities
 const leaf = await createVouchsafeIdentity('leaf');
