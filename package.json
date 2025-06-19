@@ -29,6 +29,9 @@
     "prepublishOnly": "npm run build",
     "test": "cd test ; mocha ."
   },
+  "bin": {
+      "create_vouchsafe_id": "./src/bin/create_vouchsafe_id.mjs"
+  },
   "dependencies": {
     "base32": "^0.0.7",
     "jose": "^6.0.10"

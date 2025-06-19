@@ -1,4 +1,5 @@
 import { generateKeyPair, sha256, sha512 } from './crypto/index.mjs';
+import { VOUCHSAFE_SPEC_VERSION } from './version.mjs';
 import { base32Encode } from './utils.mjs';
 import { toBase64, fromBase64 } from './utils.mjs';
 const SUPPORTED_HASHES = {
@@ -34,7 +35,8 @@ export async function createVouchsafeIdentity(label, hashAlg = 'sha256') {
         publicKey: toBase64(pubBytes),
         privateKey: toBase64(new Uint8Array(privateKey)),
     },
-    publicKeyHash: hashB32
+    publicKeyHash: hashB32,
+    version: VOUCHSAFE_SPEC_VERSION
   };
 }
 
