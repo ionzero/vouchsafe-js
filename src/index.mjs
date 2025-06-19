@@ -1,5 +1,5 @@
 export { VOUCHSAFE_SPEC_VERSION } from './version.mjs';
-export { createVouchsafeIdentity, verifyUrnMatchesKey } from './urn.mjs';
+export { createVouchsafeIdentity, verifyUrnMatchesKey, createVouchsafeIdentityFromKeypair } from './urn.mjs';
 export { createJwt, verifyJwt } from './jwt.mjs';
 export {
   createVouchToken,

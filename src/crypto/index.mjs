@@ -14,5 +14,6 @@ export const {
   sign,
   verify,
   sha256,
-  sha512
+  sha512,
+  getKeyBytes
 } = cryptoImpl;

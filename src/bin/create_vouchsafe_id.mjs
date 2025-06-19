@@ -3,7 +3,7 @@
 import fs from 'fs';
 import path from 'path';
 import { Command } from 'commander';
-import { createVouchsafeIdentity } from '../index.mjs';
+import { createVouchsafeIdentity, createVouchsafeIdentityFromKeypair } from '../index.mjs';
 
 const program = new Command();
 
@@ -17,15 +17,18 @@ let status = function() {
 };
 
 program.name('create-vouchsafe-id')
-  .description('Create a new Vouchsafe identity with associated keypair')
-  .version('1.0.0')
+  .description('Create a new Vouchsafe identity with associated keypair.\n\n' +
+               'By default creates a new keypair. To use an existing\n' +
+               'keypair, use the --public and --private to provide them');
 
 program
-  .option('-l, --label <label>', 'Identity label')
+  .option('-l, --label <label>', 'Identity label (required)')
   .option('-s, --separate', 'Output in separate files instead of json')
   .option('-q, --quiet', 'Do not output status messages')
   .option('-o, --output <filename>', 'output filename (or prefix in separate files mode)')
-  
+  .option('--public <filename>', 'existing public key PEM file')
+  .option('--private <filename>', 'existing private key PEM file')
+
 program.parse(process.argv);
 
 const options = program.opts();
@@ -43,12 +46,16 @@ if (label.length < 3) {
     process.exit();
 }
 
-
 if (options.quiet) {
     // override the status function if we are told to be quiet
     status = function() {
         // do nothing
     };
+}
+
+function readPemFile(filename) {
+    const contents = fs.readFileSync(filename, 'utf8');
+    return contents.replace(/^-----BEGIN .*?-----\n|\n-----END .*?-----\n?/g, '').replace(/\n/g, '');
 }
 
 function writeFile(path_or_handle, data, encoding) {
@@ -65,7 +72,18 @@ function writeFile(path_or_handle, data, encoding) {
 }
 
 try {
-  const identity = await createVouchsafeIdentity(label);
+  let identity;
+  if (options.public && options.private) {
+    const pubKey = readPemFile(options.public);
+    const privKey = readPemFile(options.private);
+    identity = await createVouchsafeIdentityFromKeypair(label, {
+      publicKey: pubKey,
+      privateKey: privKey
+    });
+  } else {
+    identity = await createVouchsafeIdentity(label);
+  }
+
   const pubPem = toPem('PUBLIC KEY', identity.keypair.publicKey);
   const privPem = toPem('PRIVATE KEY', identity.keypair.privateKey);
 
