@@ -39,7 +39,7 @@ export async function sha512(data) {
   return await crypto.subtle.digest('SHA-512', data);
 }
 
-export async function verifyKey(type, base64Der) {
+export async function getKeyBytes(type, base64Der) {
   const der = Uint8Array.from(atob(base64Der), c => c.charCodeAt(0));
 
   try {
