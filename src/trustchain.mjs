@@ -81,12 +81,11 @@ export async function verifyTrustChain(currentToken, trustedIssuers, {
 //  console.warn('trustedIssuers', trustedIssuers);
   // abort immediately if we passed max depth
   if (maxDepth <= 0) {
-//    console.warn(`⚠️ Max depth reached. Aborting at: ${currentToken}`);
+    console.warn(`⚠️ Max depth reached. Aborting at: ${currentToken}`);
     return { valid: false, reason: 'max-depth', chain };
   }
   // if we are handed a token array, create a resolver we can use from it
   if (tokens) {
-//    console.warn('Making a static resolver');
     let newResolver = makeStaticResolver(tokens);
     if (typeof resolveFn == 'function') {
         newResolver = createCompositeResolver(newResolver, resolveFn);
@@ -102,90 +101,99 @@ export async function verifyTrustChain(currentToken, trustedIssuers, {
     decodedToken = await verifyJwt(currentToken, { pubKeyOverride: tokenKey });
     tokenValidated = true;
   } catch (err) {
-//    console.warn('🚫 Failed to validate token:', err.message);
     if (tokenKey) {
-//        console.warn('🚫 Failed to validate token:', err.message);
+        // if we were provided a token key and we are in the catch, 
+        // the token didn't verify, so we should error
         return { valid: false, reason: `Invalid token: ${err.message}` };
     } 
+    // if we weren't provided a token key, we can validate later using a vouches sub_key
     decodedToken = await decodeJwt(currentToken, { pubKeyOverride: tokenKey });
   }
-  //console.warn('AWOOOOGA', decodedToken);
-  
-
-  const currentKey = `${decodedToken.iss}->${decodedToken.jti}`;
-//  console.log(`🔁 Evaluating token: ${currentKey}`);
-
-  if (decodedToken.kind === 'vch') {
-//    console.log(`📄 Token is a Vouchsafe token: ${currentKey}`);
-
-    try {
-      await validateVouchToken(currentToken);
-    } catch (err) {
-//      console.warn('🚫 Failed to validate vouch token:', err.message);
-      return { valid: false, reason: `Invalid vouch: ${err.message}` };
-    }
-  }
-
-  // if we are looking at a leaf token, we search the jti.  If we
-  // are looking at a vouch token, we need to look up the original token
-  // which is in the `sub` claim
-  // revokes show up by looking up the original sub
-  let subRefs = await resolveFn('ref', decodedToken.iss, decodedToken.sub);
-  // vouches show up by looking at the jti
-  let jtiRefs = await resolveFn('ref', decodedToken.iss, decodedToken.jti);
-  let refs = subRefs.concat(jtiRefs);
-
-  if (!tokenValidated) {
-    // if our token has not yet been validated, then we need to use sub_key 
-    // from the vouching token. So we should remove any ref that doesn't 
-    // have a sub key... and try to validate against the sub_key in each one.
-    // we remove any token from our refs list that doesn't validate against the 
-    // original token
-//    console.warn(`🚫 Token not validated, need to find a sub_key`);
-    let newRefs = refs.filter( (refToken) => {
-      let decoded = decodeJwt(refToken);
-      if (typeof decoded.sub_key == 'string') {
-        try {
-          let newDecodedToken = verifyJwt(currentToken, { pubKeyOverride: decoded.sub_key });
-          tokenValidated = true;
-          return true;
-        } catch(err) {
-//            console.warn('🚫 Found token with sub_key but failed to validate original token: ', err.message);
-        }
-      } 
-      return false;
-    });
-    refs = newRefs;
-  }
-    
-  // if token is revoked, 
-  if (await isRevoked(decodedToken, refs)) {
-    //console.warn(`🚫 Token is revoked`);
-    return { valid: false, reason: 'Vouch token is revoked' };
-  }
-
-  // ok, from here on out, we _might_ succeed. 
   let newChainLink = {
     token: currentToken,
     decoded: decodedToken,
     validated: tokenValidated
   }
-/*
-  console.log('checking decoded: ', decodedToken.iss);
-  console.log('purposes: ', purposes);
-*/
+  //console.warn('AWOOOOGA', decodedToken);
+  //
+  // immediately return if we trust the decoded token for purpose
   if (isTrustedAnchor(decodedToken.iss, decodedToken.purpose, trustedIssuers, purposes)) {
-//    console.log(`✅ Token is directly trusted by anchor: ${decodedToken.iss}`);
+    //console.log(`✅ Token is directly trusted by anchor: ${decodedToken.iss}`);
     return { valid: true, chain: chain.concat(newChainLink) };
+  } 
+
+  const currentKey = `${decodedToken.iss}->${decodedToken.jti}`;
+  //console.log(`🔁 Evaluating token: ${currentKey}`);
+
+  if (decodedToken.kind === 'vch') {
+    //console.log(`📄 Token is a Vouchsafe token: ${currentKey}`);
+    try {
+      await validateVouchToken(currentToken);
+    } catch (err) {
+      //console.warn('🚫 Failed to validate vouch token:', err.message);
+      return { valid: false, reason: `Invalid vouch: ${err.message}` };
+    }
   }
 
-//  console.log('checking refs: ', refs);
+  let subRefs = [] ; // await resolveFn('ref', decodedToken.iss, decodedToken.sub);
+  // vouches show up by looking at the jti
+  let jtiRefs = await resolveFn('ref', decodedToken.iss, decodedToken.jti);
+  let refs = subRefs.concat(jtiRefs);
+  
+  // loop over refs, create decoded refs, so we can do some evaluation.
+  let revokeMap = new Map();
+  let decodedRefs = [];
+  for( let i = 0; i < refs.length; i++) {
+    let refToken = refs[i];
+    // refs.forEach( async (refToken) => {
+    // everything in a ref should be a vouch token, so it should verify.
+    try {
+        let decoded = await verifyJwt(refToken) 
+        let tokenObj = { iss: decoded.iss, jti: decoded.jti, decoded: decoded, token: refToken };
+        if (typeof decoded.revokes == 'string') {
+            tokenObj.revokes= decoded.revokes;
+        }
+        if (typeof decoded.revokes == 'string') {
+            revokeMap.set(decoded.iss+":"+decoded.revokes, tokenObj);
+        } else {
+            if (tokenValidated) {
+                decodedRefs.push(tokenObj);
+            } else {
+                try {
+                  // if our original token was not validated, we have to verify it against this
+                  // tokens sub_key.. to make sure we are referring to the correct token.
+                  let newDecodedToken = await verifyJwt(currentToken, { pubKeyOverride: decoded.sub_key });
+                  decodedRefs.push(tokenObj);
+                } catch(err) {
+                    console.warn('🚫 Found token with sub_key but failed to validate original token: ', err.message);
+                }
+            }
+        }
+    } catch(e) {
+        //console.log('catching');
+        console.warn('token failed to validate: ', refToken);
+    }
+  };
+
+  // ok.. we have a list of tokens associated with this token. 
+  // let's remove anything that is revoked.
+  let validTokens = decodedRefs.filter( (tokenObj) => {
+    if (typeof revokeMap.get(tokenObj.iss+":"+tokenObj.jti) == 'object' ||
+        typeof revokeMap.get(tokenObj.iss+":all") == 'object') {
+        return false;
+    } else {
+        return true;
+    }
+  });
+
+  // ok, from here on out, we _might_ succeed. 
+  //
   // if we are here, we didn't get revoked.. and we didn't land on a trust anchor, 
   // so we need to keep searching
   // Attempt to find a valid trust chain by following each ref
   let paths = [];
-  for (let i = 0; i < refs.length ; i++) {
-    let nextToken = refs[i];
+  for (let i = 0; i < validTokens.length ; i++) {
+    let nextToken = validTokens[i].token;
 //    console.log('checking nextToken: ', decodeJwt(nextToken));
     let result = await verifyTrustChain(nextToken, trustedIssuers, {
         purposes,
@@ -222,7 +230,6 @@ export function isRevoked(tokenPayload, refList) {
   for (const refToken of refList) {
     try {
       decoded = decodeJwt(refToken);
-      //console.log('ref: ', decoded);
       // shortcut immediately if we don't have a revokes field.
       if (decoded.revokes == tokenPayload.jti || decoded.revokes == 'all') {
         // we do have a revokes field, so check if everything else matches appropriately

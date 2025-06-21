@@ -15,7 +15,7 @@ function decodeJwt(token) {
   return JSON.parse(Buffer.from(payload, 'base64url').toString());
 }
 
-describe('verifyTrustPaths() - revocation cases', () => {
+describe('verifyTrustChain() - revocation cases', () => {
   let leafIdentity, midIdentity, rootIdentity;
   let leafToken, midVouch, rootVouch;
   const trustedIssuers = {};
@@ -54,10 +54,11 @@ describe('verifyTrustPaths() - revocation cases', () => {
     });
   });
 
-  it.skip('should fail if mid token is revoked explicitly', async () => {
-    const midJti = decodeJwt(midVouch).jti;
+  it('should fail if mid token is revoked explicitly', async () => {
+    const midDecoded = decodeJwt(midVouch);
 
     const revoke = await revokeVouchToken(midVouch, midIdentity.keypair);
+    const revDecoded = decodeJwt(revoke);
 
     const result = await verifyTrustChain(leafToken, trustedIssuers, {
        tokens: [midVouch, rootVouch, revoke],
@@ -67,7 +68,7 @@ describe('verifyTrustPaths() - revocation cases', () => {
     assert.strictEqual(result.valid, false, 'Expected failure due to explicit revocation');
   });
 
-  it.skip('should fail if root revokes all from mid (revokes: all)', async () => {
+  it('should fail if root revokes all from mid (revokes: all)', async () => {
     const revokeAll = await revokeVouchToken(midVouch, midIdentity.keypair, {
       revokes: 'all'
     });

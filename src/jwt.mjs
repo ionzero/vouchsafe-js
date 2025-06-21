@@ -47,7 +47,6 @@ export async function createJwt(iss, iss_key, privateKey, claims = {}, options =
  */
 export async function verifyJwt(token, opts = {}) {
   const payload = joseDecodeJwt(token);
-  //console.warn('payload is', payload);
   if (!payload || !payload.iss) throw new Error("Invalid JWT payload");
 
   const pubKey = opts.pubKeyOverride
