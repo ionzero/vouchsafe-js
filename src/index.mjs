@@ -3,6 +3,7 @@ export { createVouchsafeIdentity, verifyUrnMatchesKey, createVouchsafeIdentityFr
 export { createJwt, verifyJwt } from './jwt.mjs';
 export {
   createVouchToken,
+  revokeVouchToken,
   createRevokeToken,
   validateVouchToken,
   verifyVouchToken

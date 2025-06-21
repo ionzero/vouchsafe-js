@@ -29,6 +29,7 @@ export async function createVouchToken(subjectJwt, issuer, issuerKeyPair, args =
 
   const { publicKey, privateKey } = issuerKeyPair;
   const subject =  decodeJwt(subjectJwt);
+//  console.log("XXXX", subject);
 
   if (!subject.iss || !subject.jti) throw new Error("Subject JWT must include iss and jti");
 
@@ -66,16 +67,22 @@ export async function createAttestation(issuer, issuerKeyPair, args = {}) {
 
 // TODO: JAYK pick up here 
 export async function revokeVouchToken(vouchToken, issuerKeyPair, args = {}) {
+  let decodedVouchToken = vouchToken;
+  if (typeof vouchToken == 'string') {
+    decodedVouchToken = decodeJwt(vouchToken);
+  }
   const claims = {
     ...args,
     jti: args.jti || crypto.randomUUID(),
-    sub: vouchToken.sub,
-    vch_sum: vouchToken.vch_sum,
-    vch_iss: vouchToken.vch_iss,
-    revokes: vouchToken.jti,
+    sub: decodedVouchToken.sub,
+    vch_sum: decodedVouchToken.vch_sum,
+    vch_iss: decodedVouchToken.vch_iss,
+    revokes: decodedVouchToken.jti,
   };
 
-  return await createRevokeToken(claims, vouchToken.iss, issuerKeyPair)
+  //console.log('vouchToken', decodedVouchToken);
+  //console.log('claims', claims);
+  return await createRevokeToken(claims, decodedVouchToken.iss, issuerKeyPair)
 }
 
 export async function createRevokeToken(args, issuer, issuerKeyPair) {
@@ -113,11 +120,14 @@ export async function createRevokeToken(args, issuer, issuerKeyPair) {
     throw new Error('revokes must be "all" or a valid UUID');
   }
 
+/*
   const { publicKey, privateKey } = issuerKeyPair;
 
   const iss_key = toBase64(publicKey);
+*/
+  //console.log('KeyPair', issuerKeyPair);
 
-  return createJwt(issuer, iss_key, privateKey, claims);
+  return createJwt(issuer, issuerKeyPair.publicKey, issuerKeyPair.privateKey, claims);
 }
 
 export async function validateVouchToken(token, {

@@ -60,7 +60,7 @@ function extractEffectivePurposes(chain) {
     .map(p => new Set(p.purpose.split(/\s+/)));
 
 //  console.log('chain', chain);
-//  console.log('purposes', purposes);
+  //console.log('purposes', purposes);
   if (purposes.length === 0) return [];
 
   return [...purposes.reduce((acc, next) => {
@@ -109,7 +109,7 @@ export async function verifyTrustChain(currentToken, trustedIssuers, {
     } 
     decodedToken = await decodeJwt(currentToken, { pubKeyOverride: tokenKey });
   }
-//  console.warn('AWOOOOGA', decodedToken);
+  //console.warn('AWOOOOGA', decodedToken);
   
 
   const currentKey = `${decodedToken.iss}->${decodedToken.jti}`;
@@ -126,11 +126,21 @@ export async function verifyTrustChain(currentToken, trustedIssuers, {
     }
   }
 
-  let refs = await resolveFn('ref', decodedToken.iss, decodedToken.jti);
+  // if we are looking at a leaf token, we search the jti.  If we
+  // are looking at a vouch token, we need to look up the original token
+  // which is in the `sub` claim
+  // revokes show up by looking up the original sub
+  let subRefs = await resolveFn('ref', decodedToken.iss, decodedToken.sub);
+  // vouches show up by looking at the jti
+  let jtiRefs = await resolveFn('ref', decodedToken.iss, decodedToken.jti);
+  let refs = subRefs.concat(jtiRefs);
+
   if (!tokenValidated) {
     // if our token has not yet been validated, then we need to use sub_key 
-    // from the vouching token. So we should remove any rev that doesn't 
+    // from the vouching token. So we should remove any ref that doesn't 
     // have a sub key... and try to validate against the sub_key in each one.
+    // we remove any token from our refs list that doesn't validate against the 
+    // original token
 //    console.warn(`🚫 Token not validated, need to find a sub_key`);
     let newRefs = refs.filter( (refToken) => {
       let decoded = decodeJwt(refToken);
@@ -150,7 +160,7 @@ export async function verifyTrustChain(currentToken, trustedIssuers, {
     
   // if token is revoked, 
   if (await isRevoked(decodedToken, refs)) {
-//    console.warn(`🚫 Token is revoked`);
+    //console.warn(`🚫 Token is revoked`);
     return { valid: false, reason: 'Vouch token is revoked' };
   }
 
@@ -160,7 +170,10 @@ export async function verifyTrustChain(currentToken, trustedIssuers, {
     decoded: decodedToken,
     validated: tokenValidated
   }
-//  console.log('checking decoded: ', decodedToken.iss);
+/*
+  console.log('checking decoded: ', decodedToken.iss);
+  console.log('purposes: ', purposes);
+*/
   if (isTrustedAnchor(decodedToken.iss, decodedToken.purpose, trustedIssuers, purposes)) {
 //    console.log(`✅ Token is directly trusted by anchor: ${decodedToken.iss}`);
     return { valid: true, chain: chain.concat(newChainLink) };
@@ -202,12 +215,14 @@ export async function verifyTrustChain(currentToken, trustedIssuers, {
 }
 
 export function isRevoked(tokenPayload, refList) {
+  //console.log('Checking revocation for: ', tokenPayload);
   if (!Array.isArray(refList)) return false;
   let decoded;
 
   for (const refToken of refList) {
     try {
       decoded = decodeJwt(refToken);
+      //console.log('ref: ', decoded);
       // shortcut immediately if we don't have a revokes field.
       if (decoded.revokes == tokenPayload.jti || decoded.revokes == 'all') {
         // we do have a revokes field, so check if everything else matches appropriately
@@ -258,8 +273,7 @@ export async function canUseForPurpose(token, trustedIssuers, {
     tokens,
     resolveFn,
     purposes: Array.isArray(purposes) ? purposes : [purposes],
-    maxDepth,
-    findAll: false
+    maxDepth
   });
 
   return result.valid;
