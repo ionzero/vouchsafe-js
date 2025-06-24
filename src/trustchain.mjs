@@ -258,14 +258,13 @@ export function isTrustedAnchor(iss, tokenPurpose = [], trustedIssuers = {}, req
   
   let tokenPurposes;
   if (Array.isArray(tokenPurpose)) {
-    tokenPurposes - new Set(tokenPurpose);
+    tokenPurposes = new Set(tokenPurpose);
   } else {
     tokenPurposes = new Set(
         typeof tokenPurpose === 'string' ? tokenPurpose.trim().split(/\s+/) : []
     );
   }
-//  console.log('TokenPurposes', tokenPurposes, requiredPurposes);
-
+  
   return requiredPurposes.some(p => tokenPurposes.has(p) && anchorPurposes.includes(p));
 }
 
