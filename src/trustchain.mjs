@@ -1,6 +1,5 @@
 import { verifyJwt, decodeJwt } from './jwt.mjs';
 import { validateVouchToken, verifyVouchToken } from './vouch.mjs';
-import jwt from 'jsonwebtoken';
 
 
 /**
@@ -11,7 +10,7 @@ export function makeStaticResolver(tokens) {
   const reverse = new Map(); // key = `${iss}->${jti}`, value = [tokens that reference it]
 
   for (const token of tokens) {
-    const decoded = jwt.decode(token, { complete: true });
+    const decoded = decodeJwt(token, { full: true });
     if (!decoded?.payload) continue;
 
     const { payload } = decoded;
