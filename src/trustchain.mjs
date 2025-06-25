@@ -6,8 +6,8 @@ import { validateVouchToken, verifyVouchToken } from './vouch.mjs';
  * Build a resolveFn from an in-memory array of tokens.
  */
 export function makeStaticResolver(tokens) {
-  const map = new Map(); // key = `${iss}->${jti}`, value = token
-  const reverse = new Map(); // key = `${iss}->${jti}`, value = [tokens that reference it]
+  const map = {}; // key = `${iss}->${jti}`, value = token
+  const reverse = {}; // key = `${iss}->${jti}`, value = [tokens that reference it]
 
   for (const token of tokens) {
     const decoded = decodeJwt(token, { full: true });
@@ -15,12 +15,12 @@ export function makeStaticResolver(tokens) {
 
     const { payload } = decoded;
     const key = `${payload.iss}->${payload.jti}`;
-    if (payload.iss && payload.jti) map.set(key, token);
+    if (payload.iss && payload.jti) map[key] = token;
 
     if (payload.kind === 'vch' && payload.sub) {
       let subKey = `${payload.vch_iss}->${payload.sub}`
-      if (!reverse.has(subKey)) reverse.set(subKey, []);
-      reverse.get(subKey).push(token);
+      if (!Array.isArray(reverse[subKey])) reverse[subKey] = [];
+      reverse[subKey].push(token);
     }
   }
 //  console.log('MAP', map);
@@ -29,11 +29,11 @@ export function makeStaticResolver(tokens) {
   return async function resolveFn(kind, iss, jti) {
     const key = `${iss}->${jti}`;
     if (kind === 'token') {
-      const token = map.get(key);
+      const token = map[key];
       if (!token) throw new Error(`Token not found: ${key}`);
       return token;
     } else if (kind === 'ref') {
-      return reverse.get(key) || [];
+      return reverse[key] || [];
     } else {
       throw new Error(`Unknown resolve kind: ${kind}`);
     }
@@ -51,20 +51,6 @@ export function createCompositeResolver(staticFn, dynamicFn) {
       throw new Error(`Unable to resolve ${kind}:${iss}:${jti}`);
     }
   };
-}
-
-function extractEffectivePurposes(chain) {
-  const purposes = chain
-    .filter(p => p.kind === 'vch' && p.purpose)
-    .map(p => new Set(p.purpose.split(/\s+/)));
-
-//  console.log('chain', chain);
-  //console.log('purposes', purposes);
-  if (purposes.length === 0) return [];
-
-  return [...purposes.reduce((acc, next) => {
-    return new Set([...acc].filter(x => next.has(x)));
-  })];
 }
 
 export async function verifyTrustChain(currentToken, trustedIssuers, {
@@ -118,7 +104,14 @@ export async function verifyTrustChain(currentToken, trustedIssuers, {
   // immediately return if we trust the decoded token for purpose
   if (isTrustedAnchor(decodedToken.iss, decodedToken.purpose, trustedIssuers, purposes)) {
     //console.log(`✅ Token is directly trusted by anchor: ${decodedToken.iss}`);
-    return { valid: true, chain: chain.concat(newChainLink) };
+    let final_result = { 
+        valid: true, 
+        chain: chain.concat(newChainLink) 
+    };
+
+    final_result.purposes= extractEffectivePurposesFromChain(final_result.chain);
+
+    return final_result;
   } 
 
   const currentKey = `${decodedToken.iss}->${decodedToken.jti}`;
@@ -140,7 +133,7 @@ export async function verifyTrustChain(currentToken, trustedIssuers, {
   let refs = subRefs.concat(jtiRefs);
   
   // loop over refs, create decoded refs, so we can do some evaluation.
-  let revokeMap = new Map();
+  let revokeMap = {};
   let decodedRefs = [];
   for( let i = 0; i < refs.length; i++) {
     let refToken = refs[i];
@@ -153,7 +146,7 @@ export async function verifyTrustChain(currentToken, trustedIssuers, {
             tokenObj.revokes= decoded.revokes;
         }
         if (typeof decoded.revokes == 'string') {
-            revokeMap.set(decoded.iss+":"+decoded.revokes, tokenObj);
+            revokeMap[decoded.iss+":"+decoded.revokes] = tokenObj;
         } else {
             if (tokenValidated) {
                 decodedRefs.push(tokenObj);
@@ -175,13 +168,27 @@ export async function verifyTrustChain(currentToken, trustedIssuers, {
   };
 
   // ok.. we have a list of tokens associated with this token. 
-  // let's remove anything that is revoked.
+  // let's remove anything that is revoked. and remove 
+  // anything that doesn't match our purposes
   let validTokens = decodedRefs.filter( (tokenObj) => {
-    if (typeof revokeMap.get(tokenObj.iss+":"+tokenObj.jti) == 'object' ||
-        typeof revokeMap.get(tokenObj.iss+":all") == 'object') {
+    if (typeof revokeMap[tokenObj.iss+":"+tokenObj.jti] == 'object' ||
+        typeof revokeMap[tokenObj.iss+":all"] == 'object') {
         return false;
     } else {
-        return true;
+        // if we're here, this token is not revoked, but we need
+        // to be sure it matches our required purposes.
+        if (typeof tokenObj.decoded.purpose == 'string') {
+            let tokenPurposes = {};
+            tokenObj.decoded.purpose.trim().split(/\s+/).forEach( (p) => {
+                tokenPurposes[p] = true;
+            });
+            return purposes.every((requiredPurpose) => {
+                return tokenPurposes[requiredPurpose] == true;
+            });
+        } else {
+            // no purposes provided in this token, so assuming everything is allowed
+            return true;
+        }
     }
   });
 
@@ -253,19 +260,28 @@ export function isRevoked(tokenPayload, refList) {
 export function isTrustedAnchor(iss, tokenPurpose = [], trustedIssuers = {}, requiredPurposes = []) {
   const anchorPurposes = trustedIssuers?.[iss];
   if (!anchorPurposes) return false;
-
-  if (anchorPurposes.includes('all')) return true;
   
-  let tokenPurposes;
+  const trustedPurposes = {};
+  anchorPurposes.forEach( purpose => { 
+    trustedPurposes[purpose] = true;
+  });
+
+  if (trustedPurposes['*']) return true;
+  
+  let tokenPurposes = {};
   if (Array.isArray(tokenPurpose)) {
-    tokenPurposes = new Set(tokenPurpose);
+    tokenPurpose.forEach( purpose => { 
+        tokenPurposes[purpose] = true;
+    });
   } else {
-    tokenPurposes = new Set(
-        typeof tokenPurpose === 'string' ? tokenPurpose.trim().split(/\s+/) : []
-    );
+    if (typeof tokenPurpose == 'string') {
+        tokenPurpose.trim().split(/\s+/).forEach( purpose => { 
+            tokenPurposes[purpose] = true;
+        });
+    }
   }
   
-  return requiredPurposes.some(p => tokenPurposes.has(p) && anchorPurposes.includes(p));
+  return requiredPurposes.every(p => tokenPurposes[p] && trustedPurposes[p]);
 }
 
 export async function canUseForPurpose(token, trustedIssuers, {
@@ -283,4 +299,32 @@ export async function canUseForPurpose(token, trustedIssuers, {
 
   return result.valid;
 }
+
+function extractEffectivePurposesFromChain(chain) {
+  let effective = null;
+
+  chain.forEach(link => {
+    const purposesRaw = link.decoded?.purpose;
+
+    if (typeof purposesRaw === 'string') {
+      const purposeList = purposesRaw.trim().split(/\s+/);
+      const purposeMap = {};
+      purposeList.forEach(p => {
+        purposeMap[p] = true;
+      });
+
+      if (effective === null) {
+        // Initialize effective list
+        effective = purposeList.slice();
+      } else {
+        // Intersect with current list
+        effective = effective.filter(p => purposeMap[p]);
+      }
+    }
+    // If no purpose field, do nothing — it's unconstrained
+  });
+
+  return effective || [];
+}
+
 

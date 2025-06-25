@@ -62,7 +62,6 @@ describe('verifyTrustChain()', function () {
       tokens: [vouchToken, attestationToken],
       purposes: [purpose]
     });
-    // console.warn('RESULT:', result);
 
     assert.strictEqual(result.valid, true);
     assert.ok(Array.isArray(result.chain));
