@@ -31,7 +31,8 @@ describe('verifyTrustChain()', function() {
         const leafClaims = {
             iss: leafIdentity.urn,
             jti: crypto.randomUUID(),
-            iat: now
+            iat: now,
+            purpose: 'msg-signing'
         };
         // console.log(leafIdentity);
         leafToken = await createJwt(leafIdentity.urn, leafIdentity.keypair.publicKey, leafIdentity.keypair.privateKey, leafClaims);
@@ -101,5 +102,20 @@ describe('verifyTrustChain()', function() {
 
         assert.strictEqual(result.valid, true);
         assert.ok(result.paths.length >= 1);
+    });
+
+    it('should validate a trust path if leaf is trusted directly', async function() {
+        let leafTrustedIssuers = trustedIssuers;
+        leafTrustedIssuers[leafIdentity.urn] = ['msg-signing', 'do-stuff'];
+        const result = await verifyTrustChain(leafToken, leafTrustedIssuers, {
+            purposes: [purpose]
+        });
+
+        assert.strictEqual(result.valid, true);
+        assert.ok(Array.isArray(result.chain));
+        assert.strictEqual(result.chain.length, 1);
+        let final_link = result.chain[result.chain.length - 1];
+        assert.strictEqual(final_link.decoded.iss, leafIdentity.urn);
+
     });
 });

@@ -5,7 +5,7 @@ import { validateVouchToken, verifyVouchToken } from './vouch.mjs';
 /**
  * Build a resolveFn from an in-memory array of tokens.
  */
-export function makeStaticResolver(tokens) {
+export function makeStaticResolver(tokens = []) {
     const map = {}; // key = `${iss}->${jti}`, value = token
     const reverse = {}; // key = `${iss}->${jti}`, value = [tokens that reference it]
 
@@ -78,7 +78,7 @@ export async function verifyTrustChain(currentToken, trustedIssuers, {
         };
     }
     // if we are handed a token array, create a resolver we can use from it
-    if (tokens) {
+    if (tokens || typeof resolveFn == 'undefined') {
         let newResolver = makeStaticResolver(tokens);
         if (typeof resolveFn == 'function') {
             newResolver = createCompositeResolver(newResolver, resolveFn);
@@ -115,7 +115,7 @@ export async function verifyTrustChain(currentToken, trustedIssuers, {
         validated: tokenValidated
     }
     //console.warn('AWOOOOGA', decodedToken);
-    //
+
     // immediately return if we trust the decoded token for purpose
     if (isTrustedAnchor(decodedToken.iss, decodedToken.purpose, trustedIssuers, purposes)) {
         //console.log(`✅ Token is directly trusted by anchor: ${decodedToken.iss}`);
