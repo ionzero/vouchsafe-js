@@ -8,8 +8,8 @@ import { createVouchsafeIdentity, createVouchsafeIdentityFromKeypair } from '../
 const program = new Command();
 
 function toPem(label, base64Key) {
-  const lines = base64Key.match(/.{1,64}/g).join('\n');
-  return `-----BEGIN ${label}-----\n${lines}\n-----END ${label}-----\n`;
+    const lines = base64Key.match(/.{1,64}/g).join('\n');
+    return `-----BEGIN ${label}-----\n${lines}\n-----END ${label}-----\n`;
 }
 
 let status = function() {
@@ -17,17 +17,17 @@ let status = function() {
 };
 
 program.name('create-vouchsafe-id')
-  .description('Create a new Vouchsafe identity with associated keypair.\n\n' +
-               'By default creates a new keypair. To use an existing\n' +
-               'keypair, use the --public and --private to provide them');
+    .description('Create a new Vouchsafe identity with associated keypair.\n\n' +
+        'By default creates a new keypair. To use an existing\n' +
+        'keypair, use the --public and --private to provide them');
 
 program
-  .option('-l, --label <label>', 'Identity label (required)')
-  .option('-s, --separate', 'Output in separate files instead of json')
-  .option('-q, --quiet', 'Do not output status messages')
-  .option('-o, --output <filename>', 'output filename (or prefix in separate files mode)')
-  .option('--public <filename>', 'existing public key PEM file')
-  .option('--private <filename>', 'existing private key PEM file')
+    .option('-l, --label <label>', 'Identity label (required)')
+    .option('-s, --separate', 'Output in separate files instead of json')
+    .option('-q, --quiet', 'Do not output status messages')
+    .option('-o, --output <filename>', 'output filename (or prefix in separate files mode)')
+    .option('--public <filename>', 'existing public key PEM file')
+    .option('--private <filename>', 'existing private key PEM file')
 
 program.parse(process.argv);
 
@@ -62,7 +62,9 @@ function writeFile(path_or_handle, data, encoding) {
     let out = path_or_handle;
     let type = 'handle';
     if (typeof path_or_handle == 'string') {
-        out = fs.createWriteStream(path_or_handle, { encoding });
+        out = fs.createWriteStream(path_or_handle, {
+            encoding
+        });
         type = 'file'
     }
     out.write(data);
@@ -72,65 +74,48 @@ function writeFile(path_or_handle, data, encoding) {
 }
 
 try {
-  let identity;
-  if (options.public && options.private) {
-    const pubKey = readPemFile(options.public);
-    const privKey = readPemFile(options.private);
-    identity = await createVouchsafeIdentityFromKeypair(label, {
-      publicKey: pubKey,
-      privateKey: privKey
-    });
-  } else {
-    identity = await createVouchsafeIdentity(label);
-  }
+    let identity;
+    if (options.public && options.private) {
+        const pubKey = readPemFile(options.public);
+        const privKey = readPemFile(options.private);
+        identity = await createVouchsafeIdentityFromKeypair(label, { publicKey: pubKey, privateKey: privKey });
+    } else {
+        identity = await createVouchsafeIdentity(label);
+    }
 
-  const pubPem = toPem('PUBLIC KEY', identity.keypair.publicKey);
-  const privPem = toPem('PRIVATE KEY', identity.keypair.privateKey);
+    const pubPem = toPem('PUBLIC KEY', identity.keypair.publicKey);
+    const privPem = toPem('PRIVATE KEY', identity.keypair.privateKey);
 
-  status(`Created identity: ${identity.urn}`);
-  if (!options.separate) {
-      let json_output = JSON.stringify(identity, undefined, 4);
-      let output_filename = options.output || label + '.json';
-      if (output_filename == '-') {
-          output_filename = process.stdout; 
-      } 
-      await writeFile(
-          output_filename,
-          json_output,
-          'utf8'
-      );
-      if (options.output != '-') {
-          status(`Saved to: ${output_filename}`);
-      }
-  } else {
-      let urnFilename = `${keyPrefix}.urn`;
-      let pubKeyFilename = `${keyPrefix}.public.pem`;
-      let privateKeyFilename = `${keyPrefix}.private.pem`;
-      if (keyPrefix == '-') {
-          urnFilename = process.stdout; 
-          pubKeyFilename = process.stdout; 
-          privateKeyFilename = process.stdout; 
-      } 
-      await writeFile(
-        urnFilename,
-        identity.urn + '\n',
-        'utf8'
-      );
-      await writeFile(
-        privateKeyFilename,
-        privPem,
-        'utf8'
-      );
-      await writeFile(
-        pubKeyFilename,
-        pubPem,
-        'utf8'
-      );
-      if (keyPrefix != '-') {
-        status(`Saved to: ${keyPrefix}.urn, ${keyPrefix}.private.pem and ${keyPrefix}.public.pem `);
-      }
-  }
-} catch(err) {
-  status('Error:', err);
-  process.exit(1);
+    status(`Created identity: ${identity.urn}`);
+    if (!options.separate) {
+        let json_output = JSON.stringify(identity, undefined, 4);
+        let output_filename = options.output || label + '.json';
+        if (output_filename == '-') {
+            output_filename = process.stdout;
+        }
+        await writeFile(output_filename, json_output, 'utf8');
+
+        if (options.output != '-') {
+            status(`Saved to: ${output_filename}`);
+        }
+    } else {
+        let urnFilename = `${keyPrefix}.urn`;
+        let pubKeyFilename = `${keyPrefix}.public.pem`;
+        let privateKeyFilename = `${keyPrefix}.private.pem`;
+        if (keyPrefix == '-') {
+            urnFilename = process.stdout;
+            pubKeyFilename = process.stdout;
+            privateKeyFilename = process.stdout;
+        }
+        await writeFile(urnFilename, identity.urn + '\n', 'utf8');
+        await writeFile(privateKeyFilename, privPem, 'utf8');
+        await writeFile(pubKeyFilename, pubPem, 'utf8');
+
+        if (keyPrefix != '-') {
+            status(`Saved to: ${keyPrefix}.urn, ${keyPrefix}.private.pem and ${keyPrefix}.public.pem `);
+        }
+    }
+} catch (err) {
+    status('Error:', err);
+    process.exit(1);
 }
