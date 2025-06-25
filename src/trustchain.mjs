@@ -13,7 +13,7 @@ export function makeStaticResolver(tokens) {
         const decoded = decodeJwt(token, {
             full: true
         });
-        if (!decoded ? .payload) continue;
+        if (!decoded?.payload) continue;
 
         const {
             payload
@@ -294,7 +294,7 @@ export function isRevoked(tokenPayload, refList) {
 }
 
 export function isTrustedAnchor(iss, tokenPurpose = [], trustedIssuers = {}, requiredPurposes = []) {
-    const anchorPurposes = trustedIssuers ? .[iss];
+    const anchorPurposes = trustedIssuers?.[iss];
     if (!anchorPurposes) return false;
 
     const trustedPurposes = {};
@@ -340,7 +340,7 @@ function extractEffectivePurposesFromChain(chain) {
     let effective = null;
 
     chain.forEach(link => {
-        const purposesRaw = link.decoded ? .purpose;
+        const purposesRaw = link.decoded?.purpose;
 
         if (typeof purposesRaw === 'string') {
             const purposeList = purposesRaw.trim().split(/\s+/);
