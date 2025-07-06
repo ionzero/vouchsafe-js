@@ -1,6 +1,6 @@
 {
   "name": "vouchsafe",
-  "version": "1.4.1",
+  "version": "1.4.2",
   "description": "Vouchsafe Decentralized Identity and Trust Verification module",
   "repository": {
     "type": "git",
@@ -14,7 +14,11 @@
     "jsonwebtoken",
     "verification",
     "security",
-    "vouchsafe"
+    "vouchsafe",
+    "decentralized",
+    "decentralization",
+    "authentication",
+    "authorization"
   ],
   "author": "Jay Kuri",
   "license": "BSD-3-Clause",
