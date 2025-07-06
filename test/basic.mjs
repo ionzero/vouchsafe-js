@@ -10,7 +10,7 @@ import {
 describe('verifyTrustChain()', function() {
     let leafIdentity, midIdentity, rootIdentity;
     let secondMidIdentity, secondRootIdentity;
-    let leafToken, vouchToken, attestationToken;
+    let leafToken, vouchToken, delegateToken;
     let secondVouchToken, secondAttestationToken;
     const trustedIssuers = {};
     const purpose = 'msg-signing';
@@ -44,7 +44,7 @@ describe('verifyTrustChain()', function() {
         });
 
         // Root identity vouches for mid's vouch
-        attestationToken = await createVouchToken(vouchToken, rootIdentity.urn, rootIdentity.keypair, {
+        delegateToken = await createVouchToken(vouchToken, rootIdentity.urn, rootIdentity.keypair, {
             //sub_key: midIdentity.keypair.publicKey,
             purpose
         });
@@ -60,7 +60,7 @@ describe('verifyTrustChain()', function() {
 
     it('should validate a trust path from leaf to root', async function() {
         const result = await verifyTrustChain(leafToken, trustedIssuers, {
-            tokens: [vouchToken, attestationToken],
+            tokens: [vouchToken, delegateToken],
             purposes: [purpose]
         });
         // console.warn('RESULT:', result);
@@ -72,7 +72,7 @@ describe('verifyTrustChain()', function() {
         assert.strictEqual(final_link.decoded.iss, rootIdentity.urn);
     });
 
-    it('should fail if no attestation is present', async function() {
+    it('should fail if no delegate is present', async function() {
         const result = await verifyTrustChain(leafToken, trustedIssuers, {
             tokens: [vouchToken],
             purposes: [purpose]
@@ -85,7 +85,7 @@ describe('verifyTrustChain()', function() {
 
     it('should fail if purpose does not match', async function() {
         const result = await verifyTrustChain(leafToken, trustedIssuers, {
-            tokens: [vouchToken, attestationToken],
+            tokens: [vouchToken, delegateToken],
             purposes: ['not-allowed']
         });
 
@@ -94,7 +94,7 @@ describe('verifyTrustChain()', function() {
 
     it('should return multiple paths when findAll is enabled', async function() {
         const result = await verifyTrustChain(leafToken, trustedIssuers, {
-            tokens: [vouchToken, attestationToken],
+            tokens: [vouchToken, delegateToken],
             purposes: [purpose],
             findAll: true
         });

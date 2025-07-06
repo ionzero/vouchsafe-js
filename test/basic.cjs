@@ -104,7 +104,7 @@ describe('verifyTrustChain()', function() {
     });
     it('should validate a trust path if leaf is trusted directly', async function() {
         let leafTrustedIssuers = trustedIssuers;
-        leafTrustedIssuers[leafIdentity.urn] = ['msg-signing', 'do-stuff'];
+        leafTrustedIssuers[leafIdentity.urn] = ['logging', 'msg-signing', 'do-stuff'];
         const result = await verifyTrustChain(leafToken, leafTrustedIssuers, {
             purposes: [purpose]
         });
