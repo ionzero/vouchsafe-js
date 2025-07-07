@@ -25,16 +25,24 @@
   "exports": {
     "import": "./src/index.mjs",
     "require": "./dist/index.js",
-    "default": "./src/index.mjs"
+    "default": "./src/index.mjs",
+    "browser": {
+      "import": "./dist/browser/index.mjs",
+      "require": "./dist/index.js"
+    }
   },
   "main": "./dist/index.js",
+  "files": [
+    "src",
+    "dist"
+  ],
   "scripts": {
     "build": "rollup -c",
     "prepublishOnly": "npm run build",
     "test": "cd test ; mocha ."
   },
   "bin": {
-      "create_vouchsafe_id": "./src/bin/create_vouchsafe_id.mjs"
+    "create_vouchsafe_id": "./src/bin/create_vouchsafe_id.mjs"
   },
   "dependencies": {
     "base32": "^0.0.7",

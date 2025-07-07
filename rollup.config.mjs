@@ -4,7 +4,8 @@ import { nodeResolve } from '@rollup/plugin-node-resolve';
 import commonjs from '@rollup/plugin-commonjs';
 import json from '@rollup/plugin-json';
 
-export default {
+export default [
+{
     input: 'src/index.mjs',
     output: {
         dir: 'dist',
@@ -16,4 +17,24 @@ export default {
         commonjs(),
         json()
     ]
-};
+},
+{
+    input: 'src/index.mjs',
+    output: {
+        dir: 'dist/browser',
+        format: 'es',
+        name: 'Vouchsafe', 
+        sourcemap: true
+    },
+    external: ['node:crypto'], 
+    plugins: [
+        nodeResolve({
+            browser: true,
+            preferBuiltins: false
+        }),
+        commonjs(),
+        json()
+    ]
+}
+]
+
