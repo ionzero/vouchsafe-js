@@ -1,7 +1,6 @@
 import { getKeyBytes, generateKeyPair, sha256, sha512 } from './crypto/index.mjs';
 import { VOUCHSAFE_SPEC_VERSION } from './version.mjs';
-import { base32Encode } from './utils.mjs';
-import { toBase64, fromBase64 } from './utils.mjs';
+import { base32Encode, toBase64, fromBase64 } from './utils.mjs';
 
 const SUPPORTED_HASHES = {
     sha256,

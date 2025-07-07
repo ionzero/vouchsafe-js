@@ -11,10 +11,11 @@ export async function generateKeyPair() {
         publicKey,
         privateKey
     } = generateKeyPairSync('ed25519');
-    return {
+    let result = {
         publicKey: publicKey.export({ type: 'spki', format: 'der' }),
         privateKey: privateKey.export({ type: 'pkcs8', format: 'der' }),
     };
+    return result;
 }
 
 export async function sign(data, privateKeyDer) {
@@ -36,8 +37,13 @@ export async function sha512(data) {
     return createHash('sha512').update(data).digest();
 }
 
-export async function getKeyBytes(type, base64Der) {
-    const der = Buffer.from(base64Der, 'base64');
+export async function getKeyBytes(type, keyDer) {
+    let der;
+    if (typeof keyDer == 'string') {
+        der = Buffer.from(keyDer, 'base64');
+    } else {
+        der = Buffer.from(keyDer);
+    }
 
     try {
         let key;

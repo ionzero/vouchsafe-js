@@ -5,10 +5,10 @@ export async function generateKeyPair() {
         },
         true, ['sign', 'verify']
     );
-    const publicKey = await crypto.subtle.exportKey('raw', keyPair.publicKey);
+    const publicKey = await crypto.subtle.exportKey('spki', keyPair.publicKey);
     const privateKey = await crypto.subtle.exportKey('pkcs8', keyPair.privateKey);
     return {
-        publicKey,
+        publicKey: new Uint8Array(publicKey),
         privateKey
     };
 }
@@ -31,8 +31,13 @@ export async function sha512(data) {
     return await crypto.subtle.digest('SHA-512', data);
 }
 
-export async function getKeyBytes(type, base64Der) {
-    const der = Uint8Array.from(atob(base64Der), c => c.charCodeAt(0));
+export async function getKeyBytes(type, keyDer) {
+    let der;
+    if (typeof keyDer == 'string') {
+        der = Uint8Array.from(atob(keyDer), c => c.charCodeAt(0));
+    } else {
+        der = keyDer;
+    }
 
     try {
         let key;
