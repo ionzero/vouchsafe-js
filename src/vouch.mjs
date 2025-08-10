@@ -155,8 +155,8 @@ export async function validateVouchToken(token, {
     if (!iss_key) throw new Error('Missing required iss_key in Vouchsafe token');
     if (!sub || typeof sub !== 'string') throw new Error('Missing or invalid sub');
     if (!vch_iss || typeof vch_iss !== 'string') throw new Error('Missing or invalid vch_iss');
-    if (requireVouchsafeIssuers && !iss.startsWith('urn:vouchsafe:')) {
-        throw new Error('Non-vouchsafe issuer not allowed under current settings');
+    if (!iss.startsWith('urn:vouchsafe:')) {
+        throw new Error('Invalid token: Non-vouchsafe id in issuer');
     }
     const urnOk = await verifyUrnMatchesKey(iss, iss_key);
     if (!urnOk) throw new Error('iss_key does not match URN in iss');
