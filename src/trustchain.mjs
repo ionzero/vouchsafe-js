@@ -79,7 +79,11 @@ export async function verifyTrustChain(currentToken, trustedIssuers, {
     }
     // if we are handed a token array, create a resolver we can use from it
     if (tokens || typeof resolveFn == 'undefined') {
-        let newResolver = makeStaticResolver(tokens);
+        let token_list = [currentToken];
+        if (Array.isArray(tokens)) {
+            token_list = token_list.concat(tokens);
+        }
+        let newResolver = makeStaticResolver(token_list);
         if (typeof resolveFn == 'function') {
             newResolver = createCompositeResolver(newResolver, resolveFn);
         }
