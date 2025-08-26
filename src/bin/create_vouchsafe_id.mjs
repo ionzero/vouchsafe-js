@@ -25,6 +25,7 @@ program
     .option('-l, --label <label>', 'Identity label (required)')
     .option('-s, --separate', 'Output in separate files instead of json')
     .option('-q, --quiet', 'Do not output status messages')
+    .option('-e, --existing <filename>', 'Load an existing identity file rather than creating from scratch')
     .option('-o, --output <filename>', 'output filename (or prefix in separate files mode)')
     .option('--public <filename>', 'existing public key PEM file')
     .option('--private <filename>', 'existing private key PEM file')
@@ -79,6 +80,10 @@ try {
         const pubKey = readPemFile(options.public);
         const privKey = readPemFile(options.private);
         identity = await createVouchsafeIdentityFromKeypair(label, { publicKey: pubKey, privateKey: privKey });
+    } else if (options.existing) {
+        const filedata = fs.readFileSync(options.existing, 'utf8');
+        let identity_from_file = JSON.parse(filedata);
+        identity = await createVouchsafeIdentityFromKeypair(label, identity_from_file.keypair);
     } else {
         identity = await createVouchsafeIdentity(label);
     }
@@ -92,6 +97,9 @@ try {
         let output_filename = options.output || label + '.json';
         if (output_filename == '-') {
             output_filename = process.stdout;
+        }
+        if (options.existing == output_filename) {
+            throw new Error('Stubbornly refusing to overwrite original identity file');
         }
         await writeFile(output_filename, json_output, 'utf8');
 

@@ -31,3 +31,6 @@ export {
     verifyTrustChain,
     canUseForPurpose,
 } from './trustchain.mjs'; // or wherever you place it
+
+export { Identity } from './Identity.mjs';
+

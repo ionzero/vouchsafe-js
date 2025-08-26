@@ -27,8 +27,6 @@ export function makeStaticResolver(tokens = []) {
             reverse[subKey].push(token);
         }
     }
-    //  console.log('MAP', map);
-    //  console.log('REVERSE', reverse);
 
     return async function resolveFn(kind, iss, jti) {
         const key = `${iss}->${jti}`;
@@ -70,7 +68,7 @@ export async function verifyTrustChain(currentToken, trustedIssuers, {
     //  console.warn('trustedIssuers', trustedIssuers);
     // abort immediately if we passed max depth
     if (maxDepth <= 0) {
-        console.warn(`⚠️ Max depth reached. Aborting at: ${currentToken}`);
+        //console.warn(`Max depth reached. Aborting at: ${currentToken}`);
         return {
             valid: false,
             reason: 'max-depth',
@@ -118,11 +116,10 @@ export async function verifyTrustChain(currentToken, trustedIssuers, {
         decoded: decodedToken,
         validated: tokenValidated
     }
-    //console.warn('AWOOOOGA', decodedToken);
 
     // immediately return if we trust the decoded token for purpose
     if (isTrustedAnchor(decodedToken.iss, decodedToken.purpose, trustedIssuers, purposes)) {
-        //console.log(`✅ Token is directly trusted by anchor: ${decodedToken.iss}`);
+        //console.log(`Token is directly trusted by anchor: ${decodedToken.iss}`);
         let final_result = {
             valid: true,
             chain: chain.concat(newChainLink)
@@ -134,14 +131,14 @@ export async function verifyTrustChain(currentToken, trustedIssuers, {
     }
 
     const currentKey = `${decodedToken.iss}->${decodedToken.jti}`;
-    //console.log(`🔁 Evaluating token: ${currentKey}`);
+    //console.log(`Evaluating token: ${currentKey}`);
 
     if (decodedToken.kind === 'vch') {
-        //console.log(`📄 Token is a Vouchsafe token: ${currentKey}`);
+        //console.log(`Token is a Vouchsafe token: ${currentKey}`);
         try {
             await validateVouchToken(currentToken);
         } catch (err) {
-            //console.warn('🚫 Failed to validate vouch token:', err.message);
+            //console.warn('Failed to validate vouch token:', err.message);
             return {
                 valid: false,
                 reason: `Invalid vouch: ${err.message}`
@@ -186,7 +183,7 @@ export async function verifyTrustChain(currentToken, trustedIssuers, {
                         });
                         decodedRefs.push(tokenObj);
                     } catch (err) {
-                        console.warn('🚫 Found token with sub_key but failed to validate original token: ', err.message);
+                        console.warn('Found token with sub_key but failed to validate original token: ', err.message);
                     }
                 }
             }
@@ -237,17 +234,16 @@ export async function verifyTrustChain(currentToken, trustedIssuers, {
             findAll,
             chain: chain.concat(newChainLink)
         });
-        //    console.warn(`Verify Recurse result: `, result.valid);
+        // console.warn(`Verify Recurse result: `, result.valid);
         if (result.valid == true) {
             if (!findAll) {
                 return result;
             } else {
-                //            console.log('result is valid and in findall', result);
+                // console.log('result is valid and in findall', result);
                 paths.push(result);
             }
         }
     }
-    //  console.warn('findall, paths', findAll, paths.length);
     if (findAll && paths.length > 0) {
         // if we were asked to find all, and we found at least one valid path, return valid + paths
         return {
@@ -266,7 +262,6 @@ export async function verifyTrustChain(currentToken, trustedIssuers, {
 }
 
 export function isRevoked(tokenPayload, refList) {
-    //console.log('Checking revocation for: ', tokenPayload);
     if (!Array.isArray(refList)) return false;
     let decoded;
 
