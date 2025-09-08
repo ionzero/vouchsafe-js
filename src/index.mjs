@@ -11,7 +11,8 @@ export {
 export {
     createJwt,
     verifyJwt,
-    decodeJwt
+    decodeJwt,
+    getAppClaims
 } from './jwt.mjs';
 
 export {
