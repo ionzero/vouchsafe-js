@@ -1,6 +1,6 @@
 {
   "name": "vouchsafe",
-  "version": "1.5.0",
+  "version": "1.5.5",
   "description": "Vouchsafe Decentralized Identity and Trust Verification module",
   "repository": {
     "type": "git",
@@ -18,7 +18,9 @@
     "decentralized",
     "decentralization",
     "authentication",
-    "authorization"
+    "authorization",
+    "webhooks",
+    "webhook"
   ],
   "author": "Jay Kuri",
   "license": "BSD-3-Clause",
@@ -42,7 +44,9 @@
     "test": "cd test ; mocha ."
   },
   "bin": {
-    "create_vouchsafe_id": "./src/bin/create_vouchsafe_id.mjs"
+    "create_vouchsafe_id": "./src/bin/create_vouchsafe_id.mjs",
+    "create_vouchsafe_token": "./src/bin/create_vouchsafe_token.mjs",
+    "verify_vouchsafe_token": "./src/bin/verify_vouchsafe_token.mjs"
   },
   "dependencies": {
     "base32": "^0.0.7",
