@@ -12,6 +12,7 @@ import { createJwt, verifyJwt } from './jwt.mjs';
 import {
   createAttestation,
   createVouchToken,
+  validateVouchToken,
   revokeVouchToken
 } from './vouch.mjs';
 
@@ -70,17 +71,6 @@ export class Identity {
 
   // --- token creation ---
 
-  async sign(claims = {}) {
-    // Convenience: default iss/iat if not provided
-    const now = Math.floor(Date.now() / 1000);
-    const c = {
-      iat: claims.iat ?? now,
-      iss: claims.iss ?? this.urn,
-      ...claims
-    };
-    return createJwt(this.urn, this.keypair.publicKey, this.keypair.privateKey, c);
-  }
-
   async attest(claims = {}) {
     // Default vch_iss to this identity when omitted
     const c = {
@@ -104,14 +94,10 @@ export class Identity {
     return revokeVouchToken(vouchToken, this.keypair, opts);
   }
 
-  // --- lightweight verify helper (kept separate from trust-chain) ---
-
   async verify(token) {
-    return verifyJwt(token);
+    return validateVouchToken(token);
   }
-
   // --- utilities ---
-
   toJSON() {
     return { urn: this.urn, keypair: this.keypair };
   }
