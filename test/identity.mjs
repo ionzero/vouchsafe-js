@@ -37,7 +37,7 @@ describe('Identity class', function () {
       const again = await Identity.from({ urn: base.urn, keypair: base.keypair });
       assert.strictEqual(again.urn, base.urn);
       // quick sanity: a signed token validates and bears the same iss
-      const tok = await again.sign({ foo: 'bar' });
+      const tok = await again.attest({ foo: 'bar' });
       const payload = decodeJwt(tok);
       assert.strictEqual(payload.iss, base.urn);
       assert.strictEqual(payload.foo, 'bar');
@@ -48,17 +48,6 @@ describe('Identity class', function () {
       const viaKeypair = await Identity.fromKeypair('carol', seed.keypair);
       assert.strictEqual(viaKeypair.urn, seed.urn);
       assert.strictEqual(viaKeypair.keypair.publicKey, seed.keypair.publicKey);
-    });
-  });
-
-  describe('sign()', function () {
-    it('signs arbitrary claims and defaults iss/iat', async function () {
-      const id = await Identity.create('signer');
-      const tok = await id.sign({ msg: 'hello' });
-      const payload = decodeJwt(tok);
-      assert.strictEqual(payload.iss, id.urn);
-      assert.strictEqual(payload.msg, 'hello');
-      assert.ok(typeof payload.iat === 'number');
     });
   });
 
@@ -134,7 +123,7 @@ describe('Identity class', function () {
   describe('verify()', function () {
     it('verifies a token signed by this identity (no chain logic)', async function () {
       const id = await Identity.create('verifier');
-      const tok = await id.sign({ ping: 'pong' });
+      const tok = await id.attest({ ping: 'pong' });
       const verified = await id.verify(tok);
       // We don’t depend on verifyJwt’s exact return shape; just that it returns an object
       assert.ok(verified && typeof verified === 'object');
@@ -153,8 +142,8 @@ describe('Identity class', function () {
       const again = await Identity.from(json);
       assert.strictEqual(again.urn, id.urn);
 
-      const t1 = await id.sign({ k: 1 });
-      const t2 = await again.sign({ k: 2 });
+      const t1 = await id.attest({ k: 1 });
+      const t2 = await again.attest({ k: 2 });
       const p1 = decodeJwt(t1);
       const p2 = decodeJwt(t2);
 

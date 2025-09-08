@@ -1,7 +1,9 @@
+import util from 'util';
 import assert from 'assert';
 import { decodeJwt } from 'jose';
 import {
     createVouchToken,
+    createAttestation,
     createJwt,
     verifyJwt,
     createVouchsafeIdentity,
@@ -15,6 +17,7 @@ describe('verifyTrustChain() - deep chain with mid-anchor', () => {
     const intermediates = [];
     const vouches = [];
     const trustedIssuers = {};
+    let trustedToken;
     const purpose = 'msg-signing';
     const chainLength = 5;
     const trustAtIndex = 2; // 0-based: the 3rd token (hop 3)
@@ -31,13 +34,13 @@ describe('verifyTrustChain() - deep chain with mid-anchor', () => {
         const leafClaims = {
             iss: leafIdentity.urn,
             jti: crypto.randomUUID(),
-            iat: now
+            iat: now,
+            purpose: purpose
         };
 
-        leafToken = await createJwt(
+        leafToken = await createAttestation(
             leafIdentity.urn,
-            leafIdentity.keypair.publicKey,
-            leafIdentity.keypair.privateKey,
+            leafIdentity.keypair,
             leafClaims
         );
 
@@ -70,6 +73,7 @@ describe('verifyTrustChain() - deep chain with mid-anchor', () => {
             sub_key: midIssuer.keypair.publicKey,
             purpose
         });
+        trustedToken = rootVouch;
 
         vouches.push(rootVouch); // add to end
         vouches.forEach((vouch) => {
@@ -90,11 +94,33 @@ describe('verifyTrustChain() - deep chain with mid-anchor', () => {
         assert.ok(result.chain.length >= 1);
         const trustedPath = result.chain;
         const hopIssuers = trustedPath.map(t => t.decoded.iss);
-        //    console.log('✅ Trusted path issuers:', hopIssuers);
 
         const trustedURN = rootIdentity.urn;
         assert.ok(hopIssuers.includes(trustedURN), 'Expected path to include trusted root');
         assert.ok(hopIssuers.indexOf(trustedURN) < vouches.length - 1, 'Expected early trust anchor');
+        assert.equal(result.trustRoot.token, trustedToken, 'Trusted Root reflects correct token');
+    });
+
+    it('direct trust should return immediately', async () => {
+        let directTrustIssuers = {}; // { ...trustedIssuers };
+        directTrustIssuers[leafIdentity.urn] = [purpose];
+        const result = await verifyTrustChain(leafToken, directTrustIssuers, {
+            tokens: vouches,
+            purposes: [purpose],
+            maxDepth: 10,
+            findAll: false
+        });
+
+        assert.ok(result.valid, 'Expected trust path to be valid');
+        assert.ok(result.chain.length == 1, 'Expected chain length to be exactly 1');
+        const trustedPath = result.chain;
+        const hopIssuers = trustedPath.map(t => t.decoded.iss);
+        //    console.log('✅ Trusted path issuers:', hopIssuers);
+
+        const trustedURN = leafIdentity.urn;
+        assert.ok(hopIssuers.includes(trustedURN), 'Expected path to include trusted root');
+        assert.ok(hopIssuers.indexOf(trustedURN) < vouches.length - 1, 'Expected early trust anchor');
+        assert.equal(result.trustRoot.token, leafToken, 'Trusted Root reflects correct token');
     });
 
     it('canUseForPurpose should succeed via early trust match', async () => {
