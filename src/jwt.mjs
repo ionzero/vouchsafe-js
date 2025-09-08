@@ -21,13 +21,35 @@ export async function createJwt(iss, iss_key, privateKey, claims = {}, options =
     const key = await toPrivateKey(privateKey);
     //console.warn("XXXXXXXXXXXXXXXXXXXXXXXXXkey", key);
 
-    const iat = options.iat || Math.floor(Date.now() / 1000);
+    const now = Math.floor(Date.now() / 1000);
+    let iat;
+    let nbf;
+
+    // if claims.iat is not defined, set it to now
+    if (typeof claims.iat == 'undefined') {
+	iat = now;
+    } else if (typeof claims.iat == 'number') {
+	// if options.iat is a number, set it, otherwise we assume it should not be included
+	iat = claims.iat;
+    }
+    // same as above. only set nbf automatically if it wasn't provided at all
+    if (typeof claims.nbf == 'undefined') {
+	nbf = now;
+    } else if (typeof claims.nbf == 'number') {
+	nbf = claims.nbf;
+    }
     const payload = {
         ...claims,
         iss,
         iss_key,
-        iat
+        iat,
+	nbf,
     };
+
+    if (options.exclude_iss_key) {
+        delete payload.iss_key;
+    }
+
 
     const jwt = await new SignJWT(payload)
         .setProtectedHeader({
@@ -55,18 +77,16 @@ export async function verifyJwt(token, opts = {}) {
         await toPublicKey(opts.pubKeyOverride) :
         await extractKeyFromPayload(payload);
 
-    const {
-        payload: verified
-    } = await jwtVerify(token, pubKey, {
+    const verifyResult = await jwtVerify(token, pubKey, {
         algorithms: ['EdDSA']
     });
 
-    if (opts.verifyIssuerKey !== false && verified.iss_key) {
-        const matches = await verifyUrnMatchesKey(verified.iss, verified.iss_key);
+    if (opts.verifyIssuerKey !== false && verifyResult.payload.iss_key) {
+        const matches = await verifyUrnMatchesKey(verifyResult.payload.iss, verifyResult.payload.iss_key);
         if (!matches) throw new Error("iss_key does not match iss URN");
     }
 
-    return verified;
+    return verifyResult.payload;
 }
 
 export function decodeJwt(token, {
@@ -87,6 +107,43 @@ export function decodeJwt(token, {
     };
 }
 
+/**
+ * Return only the application-level claims from a decoded token.
+ * Strips out all core and Vouchsafe-specific claims (identity, trust, and control).
+ *
+ * @param {object} decodedToken - The decoded JWT payload
+ * @returns {object} - Object containing only non-Vouchsafe claims
+ */
+export function getAppClaims(decodedToken) {
+  if (!decodedToken || typeof decodedToken !== 'object') {
+    return {};
+  }
+
+  const coreAndVouchsafeClaims = new Set([
+    'iss',
+    'iss_key',
+    'jti',
+    'sub',
+    'kind',
+    'iat',
+    'exp',
+    'nbf',
+    'vch_iss',
+    'vch_sum',
+    'revokes',
+    'purpose',
+    'sub_key'
+  ]);
+
+  const appClaims = {};
+  for (const [key, value] of Object.entries(decodedToken)) {
+    if (!coreAndVouchsafeClaims.has(key)) {
+      appClaims[key] = value;
+    }
+  }
+
+  return appClaims;
+}
 
 // -- Internals --
 
