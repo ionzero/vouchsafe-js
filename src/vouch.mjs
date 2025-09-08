@@ -65,7 +65,6 @@ export async function createAttestation(issuer, issuerKeyPair, args = {}) {
 }
 
 
-// TODO: JAYK pick up here 
 export async function revokeVouchToken(vouchToken, issuerKeyPair, args = {}) {
     let decodedVouchToken = vouchToken;
     if (typeof vouchToken == 'string') {
@@ -120,13 +119,6 @@ export async function createRevokeToken(args, issuer, issuerKeyPair) {
         throw new Error('revokes must be "all" or a valid UUID');
     }
 
-    /*
-      const { publicKey, privateKey } = issuerKeyPair;
-
-      const iss_key = toBase64(publicKey);
-    */
-    //console.log('KeyPair', issuerKeyPair);
-
     return createJwt(issuer, issuerKeyPair.publicKey, issuerKeyPair.privateKey, claims);
 }
 
@@ -134,9 +126,7 @@ export async function validateVouchToken(token, {
     requireSubKey = false,
     requireVouchsafeIssuers = false
 } = {}) {
-    const decoded = await verifyJwt(token, {
-        verifyIssuerKey: false
-    });
+    const decoded = await verifyJwt(token); 
 
     const {
         jti,
