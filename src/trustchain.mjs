@@ -32,8 +32,7 @@ export function makeStaticResolver(tokens = []) {
         const key = `${iss}->${jti}`;
         if (kind === 'token') {
             const token = map[key];
-            if (!token) throw new Error(`Token not found: ${key}`);
-            return token;
+            return token; // return token or undefined if not found
         } else if (kind === 'ref') {
             return reverse[key] || [];
         } else {
@@ -44,221 +43,290 @@ export function makeStaticResolver(tokens = []) {
 
 export function createCompositeResolver(staticFn, dynamicFn) {
     return async function resolve(kind, iss, jti) {
-        try {
-            return await staticFn(kind, iss, jti);
-        } catch (err) {
-            if (dynamicFn) {
-                return await dynamicFn(kind, iss, jti);
+        let result;
+        let staticResult = [];
+        let dynamicResult = [];
+        if (kind == 'token') {
+            result = await staticFn(kind, iss, jti);
+	    if (!result) {
+                result = await dynamicFn(kind, iss, jti);
             }
-            throw new Error(`Unable to resolve ${kind}:${iss}:${jti}`);
+            return result;
+        } else {
+            // we are doing a ref lookup. We need both static and 
+            // dynamic results.
+            try {
+                staticResult = await staticFn(kind, iss, jti);
+            } catch(e) {
+                // do nothing - we need to do a dynamic lookup anyway
+            }
+            // we want dynamicFn exceptions to bubble up.
+            dynamicResult = await dynamicFn(kind, iss, jti);
+            result = [].concat(staticResult, dynamicResult);
+            return result;
         }
     };
 }
 
-export async function verifyTrustChain(currentToken, trustedIssuers, {
-    purposes = [],
-    maxDepth = 10,
-    resolveFn,
-    tokenKey,
-    tokens,
-    findAll,
-    chain = []
-} = {}) {
+// Helper: validate or decode a token
+async function decodeOrVerify(token, providedKey) {
+    let decoded, validated = false;
+    try {
+        decoded = await verifyJwt(token, {
+            pubKeyOverride: providedKey
+        });
+        if (decoded.kind === 'vch') await validateVouchToken(token);
+        validated = true;
+    } catch (err) {
+        if (providedKey) {
+            // We were told exactly which key to use; failure is fatal.
+            throw new Error(`Invalid token: ${err.message}`);
+        }
+        decoded = await decodeJwt(token, {
+            pubKeyOverride: providedKey
+        });
+    }
+    return {
+        decoded,
+        validated
+    };
+}
 
-    //  console.warn('trustedIssuers', trustedIssuers);
-    // abort immediately if we passed max depth
+function reconstructChain(leafKey, endKey, parentMap, linkByKey) {
+    const chain = [];
+    let cur = endKey;
+    while (cur) {
+        const link = linkByKey.get(cur);
+        if (!link) break;
+        chain.push(link);
+        cur = parentMap.get(cur);
+    }
+    // cur should be leafKey by now; push it if not already present
+    if (chain.length === 0 || `${chain[chain.length - 1].decoded.iss}:${chain[chain.length - 1].decoded.jti}` !== leafKey) {
+        const leafLink = linkByKey.get(leafKey);
+        if (leafLink) chain.push(leafLink);
+    }
+    chain.reverse(); // leaf → ... → trustRoot
+    return chain;
+}
+
+export async function verifyTrustChain(
+    currentToken,
+    trustedIssuers, {
+        purposes = [],
+        maxDepth = 10,
+        resolveFn,
+        tokenKey,
+        tokens,
+        findAll, // if true, returns { valid:true, paths:[...chains...] }
+        trustAnchorLookup = isTrustedAnchor
+    } = {}
+) {
     if (maxDepth <= 0) {
-        //console.warn(`Max depth reached. Aborting at: ${currentToken}`);
         return {
             valid: false,
-            reason: 'max-depth',
-            chain
+            reason: 'max-depth'
         };
     }
-    // if we are handed a token array, create a resolver we can use from it
-    if (tokens || typeof resolveFn == 'undefined') {
-        let token_list = [currentToken];
-        if (Array.isArray(tokens)) {
-            token_list = token_list.concat(tokens);
-        }
-        let newResolver = makeStaticResolver(token_list);
-        if (typeof resolveFn == 'function') {
+
+    // Build a resolver if needed (static list + optional composite)
+    if (tokens || typeof resolveFn === 'undefined') {
+        let tokenList = [currentToken];
+        if (Array.isArray(tokens)) tokenList = tokenList.concat(tokens);
+        let newResolver = makeStaticResolver(tokenList);
+        if (typeof resolveFn === 'function') {
             newResolver = createCompositeResolver(newResolver, resolveFn);
         }
         resolveFn = newResolver;
     }
 
 
-    let decodedToken;
-    let tokenValidated = false;
-
+    // Leaf (the originally supplied token)
+    let leafDecoded, leafValidated;
     try {
-        decodedToken = await verifyJwt(currentToken, {
-            pubKeyOverride: tokenKey
-        });
-        tokenValidated = true;
+        ({
+                decoded: leafDecoded,
+                validated: leafValidated
+            } =
+            await decodeOrVerify(currentToken, tokenKey));
     } catch (err) {
-        if (tokenKey) {
-            // if we were provided a token key and we are in the catch, 
-            // the token didn't verify, so we should error
-            return {
-                valid: false,
-                reason: `Invalid token: ${err.message}`
-            };
-        }
-        // if we weren't provided a token key, we can validate later using a vouches sub_key
-        decodedToken = await decodeJwt(currentToken, {
-            pubKeyOverride: tokenKey
-        });
-    }
-    let newChainLink = {
-        token: currentToken,
-        decoded: decodedToken,
-        validated: tokenValidated
-    }
-
-    // immediately return if we trust the decoded token for purpose
-    if (isTrustedAnchor(decodedToken.iss, decodedToken.purpose, trustedIssuers, purposes)) {
-        //console.log(`Token is directly trusted by anchor: ${decodedToken.iss}`);
-        let final_result = {
-            valid: true,
-            chain: chain.concat(newChainLink)
-        };
-
-        final_result.purposes = extractEffectivePurposesFromChain(final_result.chain);
-
-        return final_result;
-    }
-
-    const currentKey = `${decodedToken.iss}->${decodedToken.jti}`;
-    //console.log(`Evaluating token: ${currentKey}`);
-
-    if (decodedToken.kind === 'vch') {
-        //console.log(`Token is a Vouchsafe token: ${currentKey}`);
-        try {
-            await validateVouchToken(currentToken);
-        } catch (err) {
-            //console.warn('Failed to validate vouch token:', err.message);
-            return {
-                valid: false,
-                reason: `Invalid vouch: ${err.message}`
-            };
-        }
-    }
-
-    let subRefs = []; // await resolveFn('ref', decodedToken.iss, decodedToken.sub);
-    // vouches show up by looking at the jti
-    let jtiRefs = await resolveFn('ref', decodedToken.iss, decodedToken.jti);
-    let refs = subRefs.concat(jtiRefs);
-
-    // loop over refs, create decoded refs, so we can do some evaluation.
-    let revokeMap = {};
-    let decodedRefs = [];
-    for (let i = 0; i < refs.length; i++) {
-        let refToken = refs[i];
-        // refs.forEach( async (refToken) => {
-        // everything in a ref should be a vouch token, so it should verify.
-        try {
-            let decoded = await verifyJwt(refToken)
-            let tokenObj = {
-                iss: decoded.iss,
-                jti: decoded.jti,
-                decoded: decoded,
-                token: refToken
-            };
-            if (typeof decoded.revokes == 'string') {
-                tokenObj.revokes = decoded.revokes;
-            }
-            if (typeof decoded.revokes == 'string') {
-                revokeMap[decoded.iss + ":" + decoded.revokes] = tokenObj;
-            } else {
-                if (tokenValidated) {
-                    decodedRefs.push(tokenObj);
-                } else {
-                    try {
-                        // if our original token was not validated, we have to verify it against this
-                        // tokens sub_key.. to make sure we are referring to the correct token.
-                        let newDecodedToken = await verifyJwt(currentToken, {
-                            pubKeyOverride: decoded.sub_key
-                        });
-                        decodedRefs.push(tokenObj);
-                    } catch (err) {
-                        console.warn('Found token with sub_key but failed to validate original token: ', err.message);
-                    }
-                }
-            }
-        } catch (e) {
-            //console.log('catching');
-            console.warn('token failed to validate: ', refToken);
-        }
-    };
-
-    // ok.. we have a list of tokens associated with this token. 
-    // let's remove anything that is revoked. and remove 
-    // anything that doesn't match our purposes
-    let validTokens = decodedRefs.filter((tokenObj) => {
-        if (typeof revokeMap[tokenObj.iss + ":" + tokenObj.jti] == 'object' ||
-            typeof revokeMap[tokenObj.iss + ":all"] == 'object') {
-            return false;
-        } else {
-            // if we're here, this token is not revoked, but we need
-            // to be sure it matches our required purposes.
-            if (typeof tokenObj.decoded.purpose == 'string') {
-                let tokenPurposes = {};
-                tokenObj.decoded.purpose.trim().split(/\s+/).forEach((p) => {
-                    tokenPurposes[p] = true;
-                });
-                return purposes.every((requiredPurpose) => {
-                    return tokenPurposes[requiredPurpose] == true;
-                });
-            } else {
-                // no purposes provided in this token, so assuming everything is allowed
-                return true;
-            }
-        }
-    });
-
-    // ok, from here on out, we _might_ succeed. 
-    //
-    // if we are here, we didn't get revoked.. and we didn't land on a trust anchor, 
-    // so we need to keep searching
-    // Attempt to find a valid trust chain by following each ref
-    let paths = [];
-    for (let i = 0; i < validTokens.length; i++) {
-        let nextToken = validTokens[i].token;
-        //    console.log('checking nextToken: ', decodeJwt(nextToken));
-        let result = await verifyTrustChain(nextToken, trustedIssuers, {
-            purposes,
-            maxDepth: maxDepth - 1,
-            resolveFn,
-            findAll,
-            chain: chain.concat(newChainLink)
-        });
-        // console.warn(`Verify Recurse result: `, result.valid);
-        if (result.valid == true) {
-            if (!findAll) {
-                return result;
-            } else {
-                // console.log('result is valid and in findall', result);
-                paths.push(result);
-            }
-        }
-    }
-    if (findAll && paths.length > 0) {
-        // if we were asked to find all, and we found at least one valid path, return valid + paths
-        return {
-            valid: true,
-            chain: chain.concat(newChainLink),
-            paths
-        };
-    } else {
-        // if we are here, we ran off the end of refs without encountering any trust anchor.
         return {
             valid: false,
-            reason: 'untrusted',
-            chain: chain.concat(newChainLink)
+            reason: err.message || 'invalid'
         };
     }
+
+    // Quick exit: if leaf is directly trusted
+    if (await trustAnchorLookup(leafDecoded.iss, leafDecoded.purpose, trustedIssuers, purposes)) {
+        const link = {
+            token: currentToken,
+            decoded: leafDecoded,
+            validated: leafValidated,
+            trusted: true
+        };
+        return {
+            valid: true,
+            leaf: link,
+            trustRoot: link,
+            chain: [link],
+            purposes: extractEffectivePurposesFromChain([link]), 
+        };
+    }
+
+    // We’ll do a bounded breadth-first search up to maxDepth.
+    // Each queue item is { token, decoded, validated, depth }.
+    // parentMap maps "iss:jti" to the parent key.
+    const queue = [];
+    const parentMap = new Map(); // childKey -> parentKey
+    const linkByKey = new Map(); // key -> { token, decoded, validated, trusted? }
+    const visited = new Set(); // key
+
+    const leafKey = `${leafDecoded.iss}:${leafDecoded.jti}`;
+    linkByKey.set(leafKey, {
+        token: currentToken,
+        decoded: leafDecoded,
+        validated: leafValidated
+    });
+    queue.push({
+        token: currentToken,
+        decoded: leafDecoded,
+        validated: leafValidated,
+        depth: 0
+    });
+    visited.add(leafKey);
+
+    // If findAll we collect all ending chains; else first one wins.
+    const foundChains = [];
+
+    while (queue.length > 0) {
+        const {
+            token,
+            decoded,
+            validated,
+            depth
+        } = queue.shift();
+
+        if (depth >= maxDepth) continue;
+
+        // Resolve refs: “vouches show up by looking at the jti”
+        const refs = await resolveFn('ref', decoded.iss, decoded.jti) || [];
+
+        // Verify/prepare refs, build revoke map first
+        const revokeMap = {};
+        const decodedRefs = [];
+
+        for (const refToken of refs) {
+            try {
+                const refVerified = await verifyJwt(refToken);
+                const tObj = {
+                    iss: refVerified.iss,
+                    jti: refVerified.jti,
+                    decoded: refVerified,
+                    token: refToken
+                };
+
+                if (typeof refVerified.revokes === 'string') {
+                    tObj.revokes = refVerified.revokes;
+                    revokeMap[`${refVerified.iss}:${refVerified.revokes}`] = tObj;
+                } else {
+                    // If our current node (the token we’re expanding) was not validated,
+                    // confirm we’re referring to the correct token using sub_key.
+                    if (!validated) {
+                        try {
+                            await verifyJwt(token, {
+                                pubKeyOverride: refVerified.sub_key
+                            });
+                            decodedRefs.push(tObj);
+                        } catch (e) {
+                            // skip: this ref doesn't match our unvalidated parent by sub_key
+                        }
+                    } else {
+                        decodedRefs.push(tObj);
+                    }
+                }
+            } catch {
+                // skip invalid ref tokens
+            }
+        }
+
+        // Filter by revocation and purposes
+        const validNext = decodedRefs.filter((tObj) => {
+            if (revokeMap[`${tObj.iss}:${tObj.jti}`] || revokeMap[`${tObj.iss}:all`]) return false;
+
+            const p = tObj.decoded.purpose;
+            if (typeof p === 'string' && purposes.length) {
+                const tokenPurposes = Object.create(null);
+                p.trim().split(/\s+/).forEach((x) => (tokenPurposes[x] = true));
+                return purposes.every((req) => tokenPurposes[req] === true);
+            }
+            return true;
+        });
+
+        // Enqueue next tokens, record parents, and check for trust anchors
+        for (const next of validNext) {
+            const nextKey = `${next.decoded.iss}:${next.decoded.jti}`;
+            if (visited.has(nextKey)) continue;
+
+            visited.add(nextKey);
+            linkByKey.set(nextKey, {
+                token: next.token,
+                decoded: next.decoded,
+                validated: true // we verified above with verifyJwt
+            });
+            parentMap.set(nextKey, `${decoded.iss}:${decoded.jti}`);
+
+            // Anchor?
+            const isAnchor = await trustAnchorLookup(next.decoded.iss, next.decoded.purpose, trustedIssuers, purposes);
+            if (isAnchor) {
+                // Reconstruct chain from leaf → this anchor
+                const chain = reconstructChain(leafKey, nextKey, parentMap, linkByKey);
+                // Mark trustRoot
+                chain[chain.length - 1].trusted = true;
+
+                if (findAll) {
+                    foundChains.push(chain);
+                    // Keep searching for more, but respect maxDepth naturally
+                } else {
+                    return {
+                        valid: true,
+                        leaf: chain[0],
+                        trustRoot: chain[chain.length - 1],
+                        chain,
+                        purposes: extractEffectivePurposesFromChain(chain),
+                    };
+                }
+            } else {
+                // Continue traversal
+                if (depth + 1 < maxDepth) {
+                    queue.push({
+                        token: next.token,
+                        decoded: next.decoded,
+                        validated: true,
+                        depth: depth + 1
+                    });
+                }
+            }
+        }
+    }
+
+    if (findAll && foundChains.length) {
+        // Normalize to the same shape as the single-path result, but with paths[]
+        return {
+            valid: true,
+            leaf: foundChains[0][0],
+            trustRoot: foundChains[0][foundChains[0].length - 1],
+            chain: foundChains[0],
+            paths: foundChains
+        };
+    }
+
+    return {
+        valid: false,
+        reason: 'untrusted'
+    };
+
+    // ------- helpers --------
+
 }
 
 export function isRevoked(tokenPayload, refList) {
@@ -292,7 +360,7 @@ export function isRevoked(tokenPayload, refList) {
     return undefined;
 }
 
-export function isTrustedAnchor(iss, tokenPurpose = [], trustedIssuers = {}, requiredPurposes = []) {
+export async function isTrustedAnchor(iss, tokenPurpose = [], trustedIssuers = {}, requiredPurposes = []) {
     const anchorPurposes = trustedIssuers?.[iss];
     if (!anchorPurposes) return false;
 
