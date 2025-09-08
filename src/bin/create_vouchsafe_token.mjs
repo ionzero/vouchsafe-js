@@ -9,7 +9,7 @@ const program = new Command();
 
 
 program
-  .name('create-vouchsafe-token')
+  .name('create_vouchsafe_token')
   .description(
     'Create a Vouchsafe token from an identity file and claims.\n' +
       'Token types:\n' +

@@ -16,7 +16,7 @@ let status = function() {
     console.error(...arguments);
 };
 
-program.name('create-vouchsafe-id')
+program.name('create_vouchsafe_id')
     .description('Create a new Vouchsafe identity with associated keypair.\n\n' +
         'By default creates a new keypair. To use an existing\n' +
         'keypair, use the --public and --private to provide them');
