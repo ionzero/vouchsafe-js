@@ -25,18 +25,18 @@ export async function createJwt(iss, iss_key, privateKey, claims = {}, options =
     let iat;
     let nbf;
 
-    // if claims.iat is not defined, set it to now
-    if (typeof claims.iat == 'undefined') {
-	iat = now;
-    } else if (typeof claims.iat == 'number') {
-	// if options.iat is a number, set it, otherwise we assume it should not be included
+    // if claims.iat is a number, set it 
+    if (typeof claims.iat == 'number') {
 	iat = claims.iat;
-    }
+    } else if (claims.iat !== null) {
+        // if claims.iat is explicitly null, we don't set iat.  otherwise we set it to now.
+	iat = now;
+    } 
     // same as above. only set nbf automatically if it wasn't provided at all
-    if (typeof claims.nbf == 'undefined') {
-	nbf = now;
-    } else if (typeof claims.nbf == 'number') {
+    if (typeof claims.nbf == 'number') {
 	nbf = claims.nbf;
+    } else if (claims.nbf !== null) {
+	nbf = now;
     }
     const payload = {
         ...claims,

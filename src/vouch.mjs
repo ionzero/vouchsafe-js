@@ -3,7 +3,7 @@ import { decodeJwt } from 'jose';
 import { createJwt, verifyJwt } from './jwt.mjs';
 import { toBase64 } from './utils.mjs';
 import { sha256, sha512 } from './crypto/index.mjs';
-import { verifyUrnMatchesKey } from './urn.mjs';
+import { verifyUrnMatchesKey, validateIssuerString } from './urn.mjs';
 
 async function hashJwt(jwt, alg = 'sha256') {
     const data = new TextEncoder().encode(jwt);
@@ -122,77 +122,89 @@ export async function createRevokeToken(args, issuer, issuerKeyPair) {
     return createJwt(issuer, issuerKeyPair.publicKey, issuerKeyPair.privateKey, claims);
 }
 
-export async function validateVouchToken(token, {
-    requireSubKey = false,
-    requireVouchsafeIssuers = false
-} = {}) {
+export async function createBurnToken(issuer, issuerKeyPair, args = {}) {
+
+    let jti = args.jti || crypto.randomUUID();
+    const iss_key = toBase64(issuerKeyPair.publicKey);
+    const claims = {
+        ...args,
+        kind: 'vch',
+        jti: jti,
+        sub: jti,
+        burns: issuer
+    };
+
+    return createJwt(issuer, iss_key, issuerKeyPair.privateKey, claims);
+}
+
+export async function validateVouchToken(token, options)) {
     const decoded = await verifyJwt(token); 
 
-    const {
-        jti,
-        iss,
-        iss_key,
-        kind,
-        sub,
-        sub_key,
-        vch_iss,
-        vch_sum,
-        revokes,
-        purpose
-    } = decoded;
-
-    if (kind !== 'vch') throw new Error('Not a Vouchsafe token (missing kind=vch)');
-    if (!iss_key) throw new Error('Missing required iss_key in Vouchsafe token');
-    if (!sub || typeof sub !== 'string') throw new Error('Missing or invalid sub');
-    if (!vch_iss || typeof vch_iss !== 'string') throw new Error('Missing or invalid vch_iss');
-    if (!iss.startsWith('urn:vouchsafe:')) {
-        throw new Error('Invalid token: Non-vouchsafe id in issuer');
+    if (decoded.kind !== 'vch') throw new Error('Not a Vouchsafe token (missing kind=vch)');
+    if (!decoded.iss_key) throw new Error('Missing required iss_key in Vouchsafe token');
+    if (!decoded.sub || typeof decoded.sub !== 'string') throw new Error('Missing or invalid sub');
+    if (!validateIssuerString(decoded.iss)) {
+        throw new Error('Invalid token: Iss does not contain a valid Vouchsafe ID');
     }
-    const urnOk = await verifyUrnMatchesKey(iss, iss_key);
+    const urnOk = await verifyUrnMatchesKey(decoded.iss, decoded.iss_key);
     if (!urnOk) throw new Error('iss_key does not match URN in iss');
 
-    if (vch_iss === iss) {
+    if (decoded.vch_iss === decoded.iss) {
         // only attestations allow vch_iss to be the same as iss, so this 
         // must be an attestation
 
-        if (sub != jti) {
+        if (decoded.sub != decoded.jti) {
             throw new Error('Vouch tokens may not vouch for a token from the same issuer unless they are attestations');
         }
-        if (vch_sum) {
+        if (typeof decoded.vch_sum != 'undefined') {
             throw new Error('Attestations may not have a vch_sum');
         }
-        if (revokes) {
+        if (typeof decoded.revokes != 'undefined') {
             throw new Error('Attestations may not have revokes');
         }
-    } else {
+        if (typeof decoded.burns != 'undefined') {
+            throw new Error('Attestations may not have burns');
+        }
+    } else if ( typeof decoded.burns != 'undefined' ) {
+        // burn token. Let's check the rules.
+        if (decoded.sub != decoded.jti) {
+            throw new Error('Burn tokens may not vouch for a token from the same issuer unless they are attestations');
+        }
+        if (typeof decoded.vch_sum != 'undefined') {
+            throw new Error('Burn tokens may not have a vch_sum');
+        }
+        if (typeof decoded.revokes != 'undefined') {
+            throw new Error('Burn tokens may not have revokes');
+        }
+        // burns can only reference the signing issuer.
+        if (decoded.burns != decoded.iss) {
+            throw new Error('Burn tokens may not reference a different issuer');
+        }
+    } else if (typeof decoded.revokes != 'undefined') {
+        // revoke token.
+        if (!decoded.vch_iss || validateIssuerString(decoded.vch_iss)) {
+            throw new Error('Missing or invalid vch_iss');
+        }
         // all other token types must have a vch_sum
-        if (!vch_sum || !/^[A-Za-z0-9+/=]+(\.sha256|\.sha512)?$/.test(vch_sum)) {
+        if (!decoded.vch_sum || !/^[A-Za-z0-9+/=]+(\.sha256|\.sha512)?$/.test(decoded.vch_sum)) {
             throw new Error('Invalid or missing vch_sum');
         }
         // if revokes is present, it's a revoke token. 
         // revoke tokens can't have a purpose claim
-        if (revokes) {
-            if (purpose) throw new Error('Vouch token may not have both revokes and purpose');
-            if (revokes !== 'all' && !/^[0-9a-f\-]{36}$/.test(revokes)) {
-                throw new Error('revokes field must be "all" or a UUID');
-            }
+        if (typeof decoded.purpose != 'undefined') throw new Error('Vouch token may not have both revokes and purpose');
+        if (decoded.revokes !== 'all' && !/^[0-9a-f\-]{36}$/.test(decoded.revokes)) {
+            throw new Error('revokes field must be "all" or a UUID');
         }
-        if (requireSubKey && !sub_key) {
-            throw new Error('Missing sub_key');
-        }
+    } else {
+        throw new Error('Invalid token: Unable to determine token type');
     }
+        
 
     return decoded;
 }
 
-export async function verifyVouchToken(vouchJwt, subjectJwt, {
-    requireSubKey = true,
-    requireVouchsafeIssuers = false
-} = {}) {
-    const vouchPayload = await validateVouchToken(vouchJwt, {
-        requireSubKey,
-        requireVouchsafeIssuers
-    });
+export async function verifyVouchToken(vouchJwt, subjectJwt, options) {
+    const vouchPayload = await validateVouchToken(vouchJwt, options);
 
     let decoded;
 

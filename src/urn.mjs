@@ -1,6 +1,6 @@
 import { getKeyBytes, generateKeyPair, sha256, sha512 } from './crypto/index.mjs';
 import { VOUCHSAFE_SPEC_VERSION } from './version.mjs';
-import { base32Encode, toBase64, fromBase64 } from './utils.mjs';
+import { base32Decode, base32Encode, toBase64, fromBase64 } from './utils.mjs';
 
 const SUPPORTED_HASHES = {
     sha256,
@@ -116,6 +116,54 @@ export async function createVouchsafeIdentityFromKeypair(label, keypair, hashAlg
         version: VOUCHSAFE_SPEC_VERSION
     };
 }
+
+
+export function validateIssuerString(iss) {
+    if (typeof iss !== "string") return false;
+
+    const prefix = "urn:vouchsafe:";
+    if (!iss.startsWith(prefix)) return false;
+
+    const rest = iss.slice(prefix.length);
+
+    // split on first '.'
+    const dot = rest.indexOf(".");
+    if (dot === -1) return false;
+
+    const label = rest.slice(0, dot);
+    const afterLabel = rest.slice(dot + 1);
+
+    // --- Optional .sha256 suffix ---
+    let hashPart = afterLabel;
+    let suffix = null;
+
+    const secondDot = afterLabel.indexOf(".");
+    if (secondDot !== -1) {
+        hashPart = afterLabel.slice(0, secondDot);
+        suffix = afterLabel.slice(secondDot + 1);
+
+        if (suffix !== "sha256") return false;
+    }
+
+    // --- Label validation (spec) ---
+    if (label.length < 3 || label.length > 32) return false;
+    if (!/^[A-Za-z0-9_\-%+]+$/.test(label)) return false;
+
+    // --- Hash validation (spec) ---
+    if (!/^[a-z2-7]+$/.test(hashPart)) return false;
+
+    // Base32 decode must succeed
+    let decoded;
+    try {
+        decoded = base32Decode(hashPart);
+    } catch {
+        return false;
+    }
+    if (!decoded || decoded.length === 0) return false;
+
+    return true;
+}
+
 
 function toHexString(uint8arr) {
     return Array.from(uint8arr)
