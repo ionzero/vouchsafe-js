@@ -89,13 +89,13 @@ export async function createVouchsafeIdentityFromKeypair(label, keypair, hashAlg
         throw new Error("Keypair must include base64-encoded publicKey and privateKey.");
     }
 
-    // ✅ Verify public key and extract raw bytes (throws if invalid)
+    // Verify public key and extract raw bytes (throws if invalid)
     const rawPubKey = await getKeyBytes('public', keypair.publicKey);
 
-    // ✅ Optionally verify private key format and Ed25519 algorithm
+    // Optionally verify private key format and Ed25519 algorithm
     await getKeyBytes('private', keypair.privateKey); // throws if invalid
 
-    // ✅ Hash the raw public key for URN
+    // Hash the raw public key for URN
     const pubBytes = new Uint8Array(rawPubKey);
     const hash = new Uint8Array(await hashFn(pubBytes));
     const hashB32 = base32Encode(hash).toLowerCase();
@@ -145,11 +145,11 @@ export function validateIssuerString(iss) {
         if (suffix !== "sha256") return false;
     }
 
-    // --- Label validation (spec) ---
+    // --- Label validation ---
     if (label.length < 3 || label.length > 32) return false;
     if (!/^[A-Za-z0-9_\-%+]+$/.test(label)) return false;
 
-    // --- Hash validation (spec) ---
+    // --- Hash validation ---
     if (!/^[a-z2-7]+$/.test(hashPart)) return false;
 
     // Base32 decode must succeed

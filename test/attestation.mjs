@@ -38,7 +38,7 @@ describe('createAttestation()', function() {
         // Should decode cleanly
         // Should validate cryptographically
         const decoded = await validateVouchToken(attestationToken);
-        assert.strictEqual(decoded.kind, 'vch');
+        assert.strictEqual(decoded.kind, 'vch:attest');
         assert.strictEqual(decoded.purpose, 'email-confirmation');
         assert.strictEqual(decoded.email, 'user@example.com');
         assert.strictEqual(decoded.iss, issuerIdentity.urn);

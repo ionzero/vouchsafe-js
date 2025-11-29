@@ -91,3 +91,7 @@ export function fromBase64(input) {
         return bytes;
     }
 }
+
+export function isValidUUID(input) {
+   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(input);
+}
