@@ -75,7 +75,6 @@ export class Identity {
     // Default vch_iss to this identity when omitted
     const c = {
       ...claims,
-      vch_iss: claims.vch_iss ?? this.urn,
       purpose: normalizePurpose(claims.purpose)
     };
     return createAttestation(this.urn, this.keypair, c);
