@@ -210,8 +210,11 @@ export async function validateVouchToken(token) {
         }
     } else if (decoded.kind == 'vch:revoke') {
         // revoke token.
-        if (!decoded.vch_iss || validateIssuerString(decoded.vch_iss)) {
-            throw new Error('Missing or invalid vch_iss');
+        if (typeof decoded.vch_iss != 'string') {
+            throw new Error('Missing vch_iss');
+        }
+        if (!validateIssuerString(decoded.vch_iss)) {
+            throw new Error('Invalid vch_iss');
         }
         // all other token types must have a vch_sum
         if (!decoded.vch_sum || !/^[A-Za-z0-9+/=]+(\.sha256|\.sha512)?$/.test(decoded.vch_sum)) {
