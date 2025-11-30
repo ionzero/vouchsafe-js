@@ -2,7 +2,7 @@ import { verifyJwt, decodeJwt } from './jwt.mjs';
 import { validateVouchToken, verifyVouchToken, hashJwt, isBurnToken, isRevocationToken } from './vouch.mjs';
 
 // this just gives us a stable identifier for lookup.
-// we use it in a lot of places, so this gives us 
+// we use it in a lot of places, so this gives us
 // a consistent formulation of the lookup string.
 function tokenId(iss, jti) {
     if (iss.length < 70) {
@@ -23,7 +23,6 @@ export async function decodeToken(raw_token) {
     return token_obj;
 }
 
-
 async function prepareTclean(rawTokens) {
     const validated = [];
     const seenIssJTI = new Set();
@@ -40,7 +39,7 @@ async function prepareTclean(rawTokens) {
             console.error('Unable to decode token: ', e);
             continue;
         }
-            
+
         //console.log('decoded: ', current_token);
 
         const issjti = tokenId(current_token.decoded.iss, current_token.decoded.jti)
@@ -51,11 +50,11 @@ async function prepareTclean(rawTokens) {
         }
         seenIssJTI.add(issjti);
 
-        // if we are here, the token decoded correctly and validated 
+        // if we are here, the token decoded correctly and validated
         // so add it to our valid token list
         validated.push(current_token);
 
-        // if the token is a burn token, make note of it, we'll need it in a minute. 
+        // if the token is a burn token, make note of it, we'll need it in a minute.
         if (isBurnToken(current_token.decoded)) {
             burnedIdentities.add(current_token.decoded.iss);
         }
@@ -113,7 +112,7 @@ async function prepareTclean(rawTokens) {
             continue;
         }
 
-        // if our revokes field  have to revoke all - we find all 
+        // if our revokes field  have to revoke all - we find all
         if (revoke_token.revokes === "all") {
             const remaining = [];
             for (const tok of candidates) {
@@ -125,10 +124,10 @@ async function prepareTclean(rawTokens) {
                 const candidate_id = tokenId(candidate_token.iss, candidate_token.jti);
 
                 // We have to check multiple items to know if we can revoke.
-                
+
                 // First, revoke tokens can only revoke from the same issuer for the same subject.
-                if ( candidate_token.iss === revoke_token.iss && candidate_token.sub === revoke_token.sub && 
-                     candidate_token.kind === "vch:vouch" && revoke_token.vch_iss === candidate_token.vch_iss && 
+                if ( candidate_token.iss === revoke_token.iss && candidate_token.sub === revoke_token.sub &&
+                     candidate_token.kind === "vch:vouch" && revoke_token.vch_iss === candidate_token.vch_iss &&
                      revoke_token.vch_sum === candidate_token.vch_sum) {
 
                     delete tokenGraph.by_iss_jti[candidate_id];
@@ -340,7 +339,7 @@ function vouchsafeEvaluate(trustGraph, startToken, trustedIssuers, requiredPurpo
 
     // prepareTclean will always produce a DAG, but if for some reason
     // we are given a bad trust graph as input, the visited set ensures we don't loop.
-    
+
     const visited = new Set();         // mutation explicitly controlled
     const validChains = [];            // collect full valid chains when enabled
 
@@ -425,6 +424,7 @@ function vouchsafeEvaluate(trustGraph, startToken, trustedIssuers, requiredPurpo
                                 }
                             ],
                             effectivePurposes: Array.from(effectivePurposes),
+                            leaf: startToken,
                             trustRoot: currentIssuer
                         };
                     }
@@ -537,6 +537,7 @@ function vouchsafeEvaluate(trustGraph, startToken, trustedIssuers, requiredPurpo
         effectivePurposes: Array.from(primaryChain.purposes),
         // if you’ve added trustRoot on each chain object, this gives the
         // caller enough data to know which issuer granted these purposes.
+        leaf: startToken,
         trustRoot: primaryChain.trustRoot
     };
 }
@@ -560,7 +561,7 @@ function vouchsafeEvaluate(trustGraph, startToken, trustedIssuers, requiredPurpo
 //   trustedIssuers  : Map of trusted roots -> allowed purposes
 //                     e.g. { "urn:vouchsafe:root.ab...": ["msg-signing", ...] }
 //   purposes        : Optional array of purposes to filter final output
-//   options         : evaluator behavior controls: 
+//   options         : evaluator behavior controls:
 //      maxDepth     : Optional integer limiting chain depth
 //
 // Returns:
@@ -574,12 +575,15 @@ function vouchsafeEvaluate(trustGraph, startToken, trustedIssuers, requiredPurpo
 
 export async function validateTrustChain(tokens, givenStartToken, trustedIssuers, purposes, options = {}) {
 
-    // start token may be a token string or a decoded token object. 
-    // we need the latter so if we got a string, decode it ourselves.
+    // start token must be the token string, not a decoded token, but
+    // we need it decoded also so we decode it ourselves.
     let startToken = givenStartToken;
-    if (typeof startToken == 'string') {
-        startToken = await decodeToken(givenStartToken);
-    }
+    startToken = await decodeToken(givenStartToken);
+
+    // our Token set must include the start token so the graph can be built.
+    // if start token is already present → safe to use as-is - otherwise copy + append
+    const tokenSet = tokens.includes(givenStartToken) ? tokens : [...tokens, givenStartToken];
+
     // -----------------------------------------------------------------------
     // Step 1:
     // Clean and normalize the token set.
@@ -596,8 +600,7 @@ export async function validateTrustChain(tokens, givenStartToken, trustedIssuers
     // This produces a fully self-contained trustGraph suitable
     // for pure, offline ZI-CG evaluation.
     // -----------------------------------------------------------------------
-    const trustGraph = await prepareTclean(tokens);
-    //console.log(trustGraph);
+    const trustGraph = await prepareTclean(tokenSet);
 
     // -----------------------------------------------------------------------
     // Step 2:
