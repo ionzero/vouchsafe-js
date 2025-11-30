@@ -215,36 +215,59 @@ function purposeModeFromDecoded(decoded) {
 // Also handles S_Any, S_Empty.
 // Returns null if delegation stops.
 // --------------------------------------------
-function attenuatePurposes(currentPurposes, parentPurposeModel) {
-
-    // parent omitted purpose → S_Any → pass-through
-    if (parentPurposeModel.mode === "any") {
-        // NOTE (Mutation comment):
-        // We clone the incoming purpose set to avoid accidentally altering
-        // previously-existing evaluation state.
-        return new Set(currentPurposes);
+function attenuatePurposes(child, parent) {
+    //
+    // Case 1: Parent = ANY → pass through child unchanged
+    //
+    if (parent.mode === "any") {
+        // clone child
+        if (child.mode === "any") {
+            return { mode: "any", set: null };
+        }
+        if (child.mode === "empty") {
+            return { mode: "empty", set: new Set() };
+        }
+        return { mode: "set", set: new Set(child.set) };
     }
 
-    // parent purpose = "" → S_Empty → no delegation
-    if (parentPurposeModel.mode === "empty") {
-        return null; // halt delegation
+    //
+    // Case 2: Parent = EMPTY → no delegation allowed at all
+    //
+    if (parent.mode === "empty") {
+        return { mode: "empty", set: new Set() };
     }
 
-    // normal intersection case
-    if (parentPurposeModel.mode === "set") {
-        const intersection = new Set();
-        for (const p of parentPurposeModel.set) {
-            if (currentPurposes.has(p)) {
-                intersection.add(p);
+    //
+    // Case 3: Parent = SET
+    //
+    if (parent.mode === "set") {
+
+        // If child = ANY → result is just the parent’s set
+        if (child.mode === "any") {
+            return { mode: "set", set: new Set(parent.set) };
+        }
+
+        // If child = EMPTY → stays empty
+        if (child.mode === "empty") {
+            return { mode: "empty", set: new Set() };
+        }
+
+        // child = SET → intersect the two
+        const out = new Set();
+        for (const p of child.set) {
+            if (parent.set.has(p)) {
+                out.add(p);
             }
         }
-        if (intersection.size === 0) {
-            return null; // attenuation eliminated all purposes
+
+        if (out.size === 0) {
+            return { mode: "empty", set: new Set() };
         }
-        return intersection;
+
+        return { mode: "set", set: out };
     }
 
-    throw new Error("Invalid purpose model");
+    throw new Error("Invalid purpose model: " + parent.mode);
 }
 
 
@@ -301,17 +324,6 @@ function vouchsafeEvaluate(trustGraph, startToken, trustedIssuers, requiredPurpo
 
     let initialPurposes;
 
-    if (startPurposeModel.mode === "any") {
-        // S_ANY → pass through whatever comes in; at leaf this starts empty
-        initialPurposes = new Set();
-    } else if (startPurposeModel.mode === "empty") {
-        // Explicit empty string → blocks all purposes
-        initialPurposes = new Set();
-    } else {
-        // Concrete purpose set
-        initialPurposes = new Set(startPurposeModel.set);
-    }
-
     // Compute the subject ID (iss/sub pair) of the starting token
     const startSubjectId = subjectIdOf(startDecoded);
 
@@ -321,7 +333,7 @@ function vouchsafeEvaluate(trustGraph, startToken, trustedIssuers, requiredPurpo
     const queue = [];
     queue.push({
         token: startToken,
-        purposes: initialPurposes,
+        purposes: startPurposeModel,
         chain: [ startToken ],
         depth: 0
     });
@@ -355,7 +367,7 @@ function vouchsafeEvaluate(trustGraph, startToken, trustedIssuers, requiredPurpo
             const effectivePurposes = new Set();
 
             // Determine which purposes survive at the trust root
-            const iter = currentPurposes.values();
+            const iter = currentPurposes.set.values();
             while (true) {
                 const next = iter.next();
                 if (next.done) break;
