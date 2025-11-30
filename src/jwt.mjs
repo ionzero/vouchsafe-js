@@ -132,7 +132,7 @@ export function getAppClaims(decodedToken) {
     'vch_sum',
     'revokes',
     'purpose',
-    'sub_key'
+    'burns',
   ]);
 
   const appClaims = {};
