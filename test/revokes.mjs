@@ -2,12 +2,12 @@ import assert from 'assert';
 import crypto from 'crypto';
 import {
     createJwt,
+    createAttestation,
     createVouchToken,
     revokeVouchToken,
     createRevokeToken,
     createVouchsafeIdentity,
-    verifyTrustChain,
-    canUseForPurpose
+    validateTrustChain
 } from '../src/index.mjs';
 
 function decodeJwt(token) {
@@ -15,7 +15,7 @@ function decodeJwt(token) {
     return JSON.parse(Buffer.from(payload, 'base64url').toString());
 }
 
-describe('verifyTrustChain() - revocation cases', () => {
+describe('validateTrustChain() - revocation cases', () => {
     let leafIdentity, midIdentity, rootIdentity;
     let leafToken, midVouch, rootVouch;
     const trustedIssuers = {};
@@ -31,15 +31,12 @@ describe('verifyTrustChain() - revocation cases', () => {
 
         const now = Math.floor(Date.now() / 1000);
         const leafClaims = {
-            iss: leafIdentity.urn,
-            jti: crypto.randomUUID(),
-            iat: now
+            purpose: purpose
         };
 
-        leafToken = await createJwt(
+        leafToken = await createAttestation(
             leafIdentity.urn,
-            leafIdentity.keypair.publicKey,
-            leafIdentity.keypair.privateKey,
+            leafIdentity.keypair,
             leafClaims
         );
 
@@ -59,11 +56,14 @@ describe('verifyTrustChain() - revocation cases', () => {
 
         const revoke = await revokeVouchToken(midVouch, midIdentity.keypair);
         const revDecoded = decodeJwt(revoke);
+        const tokens = [
+            leafToken,
+            midVouch,
+            rootVouch,
+            revoke
+        ];
 
-        const result = await verifyTrustChain(leafToken, trustedIssuers, {
-            tokens: [midVouch, rootVouch, revoke],
-            purposes: [purpose]
-        });
+        const result = await validateTrustChain(tokens, leafToken, trustedIssuers, [purpose]);
 
         assert.strictEqual(result.valid, false, 'Expected failure due to explicit revocation');
     });
@@ -72,27 +72,28 @@ describe('verifyTrustChain() - revocation cases', () => {
         const revokeAll = await revokeVouchToken(midVouch, midIdentity.keypair, {
             revokes: 'all'
         });
+        const tokens = [
+            leafToken,
+            midVouch,
+            rootVouch,
+            revokeAll
+        ];
 
-        const result = await verifyTrustChain(leafToken, trustedIssuers, {
-            tokens: [midVouch, rootVouch, revokeAll],
-            purposes: [purpose]
-        });
+        const result = await validateTrustChain(tokens, leafToken, trustedIssuers, [purpose]);
 
         assert.strictEqual(result.valid, false, 'Expected failure due to revokes: all');
     });
 
     it('should succeed when no revocation is present', async () => {
-        const vresult = await verifyTrustChain(leafToken, trustedIssuers, {
-            tokens: [midVouch, rootVouch],
-            purposes: [purpose]
-        });
-        //console.log('vresult:', vresult);
+        const tokens = [
+            leafToken,
+            midVouch,
+            rootVouch,
+        ];
 
-        const result = await canUseForPurpose(leafToken, trustedIssuers, {
-            tokens: [midVouch, rootVouch],
-            purposes: [purpose]
-        });
+        const result = await validateTrustChain(tokens, leafToken, trustedIssuers, [purpose]);
 
-        assert.strictEqual(result, true, 'Expected valid trust path without revocation');
+        assert.strictEqual(result.valid, true, 'Expected success without revokes');
+        assert.deepEqual(result.effectivePurposes, ['msg-signing'], 'Expected valid trust path without revocation');
     });
 });

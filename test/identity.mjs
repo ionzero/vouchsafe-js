@@ -5,8 +5,7 @@ import crypto from 'crypto';
 import {
   Identity,
   createVouchsafeIdentity,
-  verifyTrustChain,
-  canUseForPurpose,
+  validateTrustChain,
 } from '../src/index.mjs';
 
 // Helper: decode a compact JWS without verifying (for payload checks)
@@ -19,7 +18,7 @@ describe('Identity class', function () {
   this.timeout(10000);
 
   describe('constructor & factories', function () {
-    it('throws on bad ctor input', function () {
+    it('throws on bad actor input', function () {
       assert.throws(() => new Identity(), /ctor/i);
       assert.throws(() => new Identity({}), /requires/i);
       assert.throws(() => new Identity({ urn: 'urn:vouchsafe:x' }), /keypair/i);
@@ -52,13 +51,12 @@ describe('Identity class', function () {
   });
 
   describe('attest()', function () {
-    it('defaults vch_iss to this.urn and supports string purpose', async function () {
+    it('supports string purpose', async function () {
       const id = await Identity.create('attestor1');
-      const att = await id.attest({ purpose: 'email-confirmation', email: 'u@example.com' });
+      const att = await id.attest({ purpose: 'email-confirmation do-stuff', email: 'u@example.com' });
       const payload = decodeJwt(att);
       assert.strictEqual(payload.iss, id.urn);
-      assert.strictEqual(payload.vch_iss, id.urn);
-      assert.strictEqual(payload.purpose, 'email-confirmation');
+      assert.strictEqual(payload.purpose, 'email-confirmation do-stuff');
       assert.strictEqual(payload.email, 'u@example.com');
     });
 
@@ -92,7 +90,7 @@ describe('Identity class', function () {
 
       // Leaf makes an attestation
       const leaf = await Identity.create('leaf');
-      const leafToken = await leaf.attest({ purpose, sub: crypto.randomUUID() });
+      const leafToken = await leaf.attest({ purpose });
 
       // Root vouches for leaf (trusted anchor)
       const root = await Identity.create('root');
@@ -102,23 +100,19 @@ describe('Identity class', function () {
       const trustedIssuers = { [root.urn]: [purpose] };
 
       // Check: valid before revocation
-      const validBefore = await canUseForPurpose(leafToken, trustedIssuers, {
-        tokens: [rootVouch],
-        purposes: [purpose],
-      });
-      assert.strictEqual(validBefore, true);
+      const validBefore = await validateTrustChain([leafToken, rootVouch], leafToken, trustedIssuers, [purpose]);
+      assert.strictEqual(validBefore.valid, true);
 
       // Revoke that vouch
       const revoke = await root.revoke(rootVouch);
+      const r = decodeJwt(revoke);
 
       // Check: now invalid with revoke in the set
-      const validAfter = await canUseForPurpose(leafToken, trustedIssuers, {
-        tokens: [rootVouch, revoke],
-        purposes: [purpose],
-      });
-      assert.strictEqual(validAfter, false);
+      const validAfter = await validateTrustChain([leafToken, rootVouch, revoke], leafToken, trustedIssuers, [purpose]);
+      assert.strictEqual(validAfter.valid, false);
     });
   });
+
 
   describe('verify()', function () {
     it('verifies a token signed by this identity (no chain logic)', async function () {

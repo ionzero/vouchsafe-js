@@ -2,11 +2,12 @@ import assert from 'assert';
 import {
     createVouchsafeIdentity,
     createJwt,
+    createAttestation,
     createVouchToken,
-    verifyTrustChain
+    validateTrustChain
 } from '../src/index.mjs';
 
-describe('verifyTrustChain() with purpose narrowing', function() {
+describe('validateTrustChain() with purpose narrowing', function() {
     let leafIdentity, midIdentity, rootIdentity;
     let leafToken, vouchToken, rootVouchToken;
     const trustedIssuers = {};
@@ -23,11 +24,9 @@ describe('verifyTrustChain() with purpose narrowing', function() {
         // Leaf JWT
         const now = Math.floor(Date.now() / 1000);
         const leafClaims = {
-            iss: leafIdentity.urn,
-            jti: crypto.randomUUID(),
-            iat: now
+//            purpose: "msg-signing"
         };
-        leafToken = await createJwt(leafIdentity.urn, leafIdentity.keypair.publicKey, leafIdentity.keypair.privateKey, leafClaims);
+        leafToken = await createAttestation(leafIdentity.urn, leafIdentity.keypair, leafClaims);
 
         // Mid vouches for leaf, narrows purposes
         vouchToken = await createVouchToken(leafToken, midIdentity.urn, midIdentity.keypair, {
@@ -42,22 +41,26 @@ describe('verifyTrustChain() with purpose narrowing', function() {
     });
 
     it('should validate the trust chain for msg-signing and report narrowed purposes', async function() {
-        const result = await verifyTrustChain(leafToken, trustedIssuers, {
-            tokens: [vouchToken, rootVouchToken],
-            purposes: ['msg-signing']
-        });
+        let tokens = [
+            leafToken,
+            vouchToken,
+            rootVouchToken
+        ];
+        const result = await validateTrustChain(tokens, leafToken, trustedIssuers, ['msg-signing']);
 
         assert.strictEqual(result.valid, true);
-        assert.ok(Array.isArray(result.purposes));
-        assert.deepStrictEqual(result.purposes.sort(), ['msg-signing', 'publish'].sort());
-        assert.strictEqual(result.chain.length, 3);
+        assert.ok(Array.isArray(result.effectivePurposes));
+        assert.deepStrictEqual(result.effectivePurposes.sort(), ['msg-signing', 'publish'].sort());
+        assert.strictEqual(result.chains[0].chain.length, 3);
     });
 
     it('should fail for a purpose that was not delegated by intermediate', async function() {
-        const result = await verifyTrustChain(leafToken, trustedIssuers, {
-            tokens: [vouchToken, rootVouchToken],
-            purposes: ['email-confirmation']
-        });
+        let tokens = [
+            leafToken,
+            vouchToken,
+            rootVouchToken
+        ];
+        const result = await validateTrustChain(tokens, leafToken, trustedIssuers, ['email-confirmation']);
 
         assert.strictEqual(result.valid, false);
     });
