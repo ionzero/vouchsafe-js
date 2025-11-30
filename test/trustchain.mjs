@@ -6,9 +6,8 @@ import {
     createVouchsafeIdentity,
     createAttestation,
     createVouchToken,
-    prepareTclean,
     decodeToken,
-    vouchsafeEvaluate
+    validateTrustChain
 } from "../src/index.mjs";
 
 
@@ -84,13 +83,7 @@ describe("Vouchsafe evaluator - fresh-minted identities each test", function () 
         ];
 
         // ---------------------------------------------------------
-        // 4. Build trust graph
-        // ---------------------------------------------------------
-        trustGraph = await prepareTclean(tokens);
-
-        // console.log('trustGraph', trustGraph);
-        // ---------------------------------------------------------
-        // 5. Trusted issuers
+        // 4. Trusted issuers
         // ---------------------------------------------------------
         trustedIssuers = {};
         trustedIssuers[root.urn] = ["msg-signing", "admin", "storage"];
@@ -102,15 +95,9 @@ describe("Vouchsafe evaluator - fresh-minted identities each test", function () 
     // ============================================================
     it("validates a simple chain without requiredPurposes", async function () {
 
-        const leafToken = await decodeToken(leafAttest);
-
-        const leafEntry = trustGraph.by_iss_jti[leafToken.decoded.iss + "/" + leafToken.decoded.jti];
-
-        //console.log('trustedIssuers', trustedIssuers);
-
-        const res = vouchsafeEvaluate(
-            trustGraph,
-            leafEntry,
+        const res = await validateTrustChain(
+            tokens,
+            leafAttest,
             trustedIssuers,
             undefined,
             {}
@@ -126,13 +113,9 @@ describe("Vouchsafe evaluator - fresh-minted identities each test", function () 
     // ============================================================
     it("validates when requiredPurposes=['msg-signing'] and chain grants it", async function () {
 
-        const leafToken = await decodeToken(leafAttest);
-
-        const leafEntry = trustGraph.by_iss_jti[leafToken.decoded.iss + "/" + leafToken.decoded.jti];
-
-        const res = vouchsafeEvaluate(
-            trustGraph,
-            leafEntry,
+        const res = await validateTrustChain(
+            tokens,
+            leafAttest,
             trustedIssuers,
             ["msg-signing"],
             {}
@@ -148,13 +131,9 @@ describe("Vouchsafe evaluator - fresh-minted identities each test", function () 
     // ============================================================
     it("fails when requiredPurposes includes an unsupported purpose", async function () {
 
-        const leafToken = await decodeToken(leafAttest);
-
-        const leafEntry = trustGraph.by_iss_jti[leafToken.decoded.iss + "/" + leafToken.decoded.jti];
-
-        const res = vouchsafeEvaluate(
-            trustGraph,
-            leafEntry,
+        const res = await validateTrustChain(
+            tokens,
+            leafAttest,
             trustedIssuers,
             ["admin"],    // Not granted by chain
             {}
@@ -186,18 +165,17 @@ describe("Vouchsafe evaluator - fresh-minted identities each test", function () 
             { }  // S_ANY
         );
 
-        const graph = await prepareTclean([a, v0]);
+        let newTokens = [a, v0]
+
 
         const trusted = {
             [hop0.urn]: ["msg-signing", "storage"]
         };
 
-        let base = await decodeToken(a);
-        const start = graph.by_iss_jti[base.decoded.iss + "/" + base.decoded.jti];
 
-        const res = vouchsafeEvaluate(
-            graph,
-            start,
+        const res = await validateTrustChain(
+            newTokens,
+            a,
             trusted,
             ["msg-signing"],
             {}
@@ -237,32 +215,29 @@ describe("Vouchsafe evaluator - fresh-minted identities each test", function () 
             { purpose: "msg-signing" }
         );
 
-        const graph = await prepareTclean([attest, v1, v2]);
+        const newTokens = [attest, v1, v2];
 
         const trusted = {
             [R.urn]: ["msg-signing"]
         };
 
-        let base = await decodeToken(attest);
-        const start = graph.by_iss_jti[base.decoded.iss + "/" + base.decoded.jti];
 
-        const res = vouchsafeEvaluate(
-            graph,
-            start,
+        const res = await validateTrustChain(
+            newTokens,
+            attest,
             trusted,
             ["msg-signing"],
             {}
         );
-        const res2 = vouchsafeEvaluate(
-            graph,
-            start,
+        const res2 = await validateTrustChain(
+            newTokens,
+            attest,
             trusted,
             ["msg-signing", "file-storage"],
             {}
         );
 
         assert.equal(res.valid, true);
-//        assert.deepEqual(res.effectivePurposes, ["msg-signing"]);
         assert.equal(res2.valid, false);
     });
 
@@ -272,13 +247,10 @@ describe("Vouchsafe evaluator - fresh-minted identities each test", function () 
     // ============================================================
     it("fails when maxDepth prevents reaching a trusted issuer", async function () {
 
-        const leafToken = await decodeToken(leafAttest);
 
-        const leafEntry = trustGraph.by_iss_jti[leafToken.decoded.iss + "/" + leafToken.decoded.jti];
-
-        const res = vouchsafeEvaluate(
-            trustGraph,
-            leafEntry,
+        const res = await validateTrustChain(
+            tokens,
+            leafAttest,
             trustedIssuers,
             ["msg-signing"],
             { maxDepth: 1 }   // far too small
@@ -293,9 +265,6 @@ describe("Vouchsafe evaluator - fresh-minted identities each test", function () 
     // ============================================================
     it("returns all valid chains when returnAllValidChains=true", async function () {
 
-        const leafToken = await decodeToken(leafAttest);
-
-        const leafEntry = trustGraph.by_iss_jti[leafToken.decoded.iss + "/" + leafToken.decoded.jti];
 
         const hop0 = await createVouchsafeIdentity("hop0");
 
@@ -307,7 +276,8 @@ describe("Vouchsafe evaluator - fresh-minted identities each test", function () 
             { purpose: "msg-signing" } 
         );
 
-        const graph = await prepareTclean([v0].concat(tokens));
+        
+        const newTokens = [v0].concat(tokens);
 
 
         const trusted = {
@@ -315,14 +285,13 @@ describe("Vouchsafe evaluator - fresh-minted identities each test", function () 
         };
         trusted[hop0.urn] = ["msg-signing", "file-storage"];
 
-        const res = vouchsafeEvaluate(
-            graph,
-            leafEntry,
+        const res = await validateTrustChain(
+            newTokens,
+            leafAttest,
             trusted,
             ["msg-signing"],
             { returnAllValidChains: true }
         );
-        //console.log(JSON.stringify(res, undefined, 4));
 
         assert.equal(res.valid, true);
         assert.ok(res.chains.length >= 1);

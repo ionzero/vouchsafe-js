@@ -24,7 +24,7 @@ export async function decodeToken(raw_token) {
 }
 
 
-export async function prepareTclean(rawTokens) {
+async function prepareTclean(rawTokens) {
     const validated = [];
     const seenIssJTI = new Set();
     const burnedIdentities = new Set();
@@ -269,7 +269,7 @@ function makeVisitKey(decoded, purposeSetOrModel) {
     return tokenId + "|" + arr.join(",");
 }
 
-export function vouchsafeEvaluate(trustGraph, startToken, trustedIssuers, requiredPurposes, options = {}) {
+function vouchsafeEvaluate(trustGraph, startToken, trustedIssuers, requiredPurposes, options = {}) {
 
     // Algorithm:
     // We perform a breadth–first search (BFS) over (token, purpose-set) states,
@@ -566,7 +566,7 @@ export async function validateTrustChain(tokens, givenStartToken, trustedIssuers
     // we need the latter so if we got a string, decode it ourselves.
     let startToken = givenStartToken;
     if (typeof startToken == 'string') {
-        startToken = decodeToken(givenStartToken);
+        startToken = await decodeToken(givenStartToken);
     }
     // -----------------------------------------------------------------------
     // Step 1:
@@ -585,6 +585,7 @@ export async function validateTrustChain(tokens, givenStartToken, trustedIssuers
     // for pure, offline ZI-CG evaluation.
     // -----------------------------------------------------------------------
     const trustGraph = await prepareTclean(tokens);
+    //console.log(trustGraph);
 
     // -----------------------------------------------------------------------
     // Step 2:

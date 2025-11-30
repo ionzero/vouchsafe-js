@@ -29,8 +29,6 @@ export {
 
 export {
     validateTrustChain,
-    prepareTclean,
-    vouchsafeEvaluate,
     decodeToken,
 } from './trustchain.mjs'; // or wherever you place it
 
