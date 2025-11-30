@@ -326,6 +326,9 @@ export function vouchsafeEvaluate(trustGraph, startToken, trustedIssuers, requir
         depth: 0
     });
 
+    // prepareTclean will always produce a DAG, but if for some reason
+    // we are given a bad trust graph as input, the visited set ensures we don't loop.
+    
     const visited = new Set();         // mutation explicitly controlled
     const validChains = [];            // collect full valid chains when enabled
 
