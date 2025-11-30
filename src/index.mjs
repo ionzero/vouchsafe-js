@@ -20,17 +20,18 @@ export {
     createVouchToken,
     revokeVouchToken,
     createRevokeToken,
+    createBurnToken,
     validateVouchToken,
-    verifyVouchToken
+    verifyVouchToken,
+    isBurnToken, 
+    isRevocationToken, 
 } from './vouch.mjs';
 
 export {
-    //  verifyChain,
-    makeStaticResolver,
-    isTrustedAnchor,
-    isRevoked,
-    verifyTrustChain,
-    canUseForPurpose,
+    validateTrustChain,
+    prepareTclean,
+    vouchsafeEvaluate,
+    decodeToken,
 } from './trustchain.mjs'; // or wherever you place it
 
 export { Identity } from './Identity.mjs';

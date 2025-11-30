@@ -1,459 +1,5 @@
 import { verifyJwt, decodeJwt } from './jwt.mjs';
-import { validateVouchToken, verifyVouchToken, hashJwt } from './vouch.mjs';
-
-/**
- * Build a resolveFn from an in-memory array of tokens.
- */
-export function makeStaticResolver(tokens = []) {
-    const map = {}; // key = `${iss}->${jti}`, value = token
-    const reverse = {}; // key = `${iss}->${jti}`, value = [tokens that reference it]
-
-    for (const token of tokens) {
-        const decoded = decodeJwt(token, {
-            full: true
-        });
-        if (!decoded?.payload) continue;
-
-        const {
-            payload
-        } = decoded;
-        const key = `${payload.iss}->${payload.jti}`;
-        if (payload.iss && payload.jti) map[key] = token;
-
-        if (payload.kind === 'vch' && payload.sub) {
-            let subKey = `${payload.vch_iss}->${payload.sub}`
-            if (!Array.isArray(reverse[subKey])) reverse[subKey] = [];
-            reverse[subKey].push(token);
-        }
-    }
-
-    return async function resolveFn(kind, iss, jti) {
-        const key = `${iss}->${jti}`;
-        if (kind === 'token') {
-            const token = map[key];
-            return token; // return token or undefined if not found
-        } else if (kind === 'ref') {
-            return reverse[key] || [];
-        } else {
-            throw new Error(`Unknown resolve kind: ${kind}`);
-        }
-    };
-}
-
-export function createCompositeResolver(staticFn, dynamicFn) {
-    return async function resolve(kind, iss, jti) {
-        let result;
-        let staticResult = [];
-        let dynamicResult = [];
-        if (kind == 'token') {
-            result = await staticFn(kind, iss, jti);
-	    if (!result) {
-                result = await dynamicFn(kind, iss, jti);
-            }
-            return result;
-        } else {
-            // we are doing a ref lookup. We need both static and 
-            // dynamic results.
-            try {
-                staticResult = await staticFn(kind, iss, jti);
-            } catch(e) {
-                // do nothing - we need to do a dynamic lookup anyway
-            }
-            // we want dynamicFn exceptions to bubble up.
-            dynamicResult = await dynamicFn(kind, iss, jti);
-            result = [].concat(staticResult, dynamicResult);
-            return result;
-        }
-    };
-}
-
-// Helper: validate or decode a token
-async function decodeOrVerify(token, providedKey) {
-    let decoded, validated = false;
-    try {
-        decoded = await verifyJwt(token, {
-            pubKeyOverride: providedKey
-        });
-        if (decoded.kind === 'vch') await validateVouchToken(token);
-        validated = true;
-    } catch (err) {
-        if (providedKey) {
-            // We were told exactly which key to use; failure is fatal.
-            throw new Error(`Invalid token: ${err.message}`);
-        }
-        decoded = await decodeJwt(token, {
-            pubKeyOverride: providedKey
-        });
-    }
-    return {
-        decoded,
-        validated
-    };
-}
-
-function reconstructChain(leafKey, endKey, parentMap, linkByKey) {
-    const chain = [];
-    let cur = endKey;
-    while (cur) {
-        const link = linkByKey.get(cur);
-        if (!link) break;
-        chain.push(link);
-        cur = parentMap.get(cur);
-    }
-    // cur should be leafKey by now; push it if not already present
-    if (chain.length === 0 || `${chain[chain.length - 1].decoded.iss}:${chain[chain.length - 1].decoded.jti}` !== leafKey) {
-        const leafLink = linkByKey.get(leafKey);
-        if (leafLink) chain.push(leafLink);
-    }
-    chain.reverse(); // leaf → ... → trustRoot
-    return chain;
-}
-
-
-export async function verifyTrustChain(
-    currentToken,
-    trustedIssuers, {
-        purposes = [],
-        maxDepth = 10,
-        resolveFn,
-        tokenKey,
-        tokens,
-        findAll, // if true, returns { valid:true, paths:[...chains...] }
-        trustAnchorLookup = isTrustedAnchor
-    } = {}
-) {
-    if (maxDepth <= 0) {
-        return {
-            valid: false,
-            reason: 'max-depth'
-        };
-    }
-    prepareTclean([currentToken].concat(tokens));
-
-    // Build a resolver if needed (static list + optional composite)
-    if (tokens || typeof resolveFn === 'undefined') {
-        let tokenList = [currentToken];
-        if (Array.isArray(tokens)) tokenList = tokenList.concat(tokens);
-        let newResolver = makeStaticResolver(tokenList);
-        if (typeof resolveFn === 'function') {
-            newResolver = createCompositeResolver(newResolver, resolveFn);
-        }
-        resolveFn = newResolver;
-    }
-
-
-    // Leaf (the originally supplied token)
-    let leafDecoded, leafValidated;
-    try {
-        ({
-                decoded: leafDecoded,
-                validated: leafValidated
-            } =
-            await decodeOrVerify(currentToken, tokenKey));
-    } catch (err) {
-        return {
-            valid: false,
-            reason: err.message || 'invalid'
-        };
-    }
-
-    // Quick exit: if leaf is directly trusted
-    if (await trustAnchorLookup(leafDecoded.iss, leafDecoded.purpose, trustedIssuers, purposes)) {
-        const link = {
-            token: currentToken,
-            decoded: leafDecoded,
-            validated: leafValidated,
-            trusted: true
-        };
-        return {
-            valid: true,
-            leaf: link,
-            trustRoot: link,
-            chain: [link],
-            purposes: extractEffectivePurposesFromChain([link]), 
-        };
-    }
-
-    // We’ll do a bounded breadth-first search up to maxDepth.
-    // Each queue item is { token, decoded, validated, depth }.
-    // parentMap maps "iss:jti" to the parent key.
-    const queue = [];
-    const parentMap = new Map(); // childKey -> parentKey
-    const linkByKey = new Map(); // key -> { token, decoded, validated, trusted? }
-    const visited = new Set(); // key
-
-    const leafKey = `${leafDecoded.iss}:${leafDecoded.jti}`;
-    linkByKey.set(leafKey, {
-        token: currentToken,
-        decoded: leafDecoded,
-        validated: leafValidated
-    });
-    queue.push({
-        token: currentToken,
-        decoded: leafDecoded,
-        validated: leafValidated,
-        depth: 0
-    });
-    visited.add(leafKey);
-
-    // If findAll we collect all ending chains; else first one wins.
-    const foundChains = [];
-
-    while (queue.length > 0) {
-        const {
-            token,
-            decoded,
-            validated,
-            depth
-        } = queue.shift();
-
-        if (depth >= maxDepth) continue;
-
-        // Resolve refs: “vouches show up by looking at the jti”
-        const refs = await resolveFn('ref', decoded.iss, decoded.jti) || [];
-
-        // Verify/prepare refs, build revoke map first
-        const revokeMap = {};
-        const decodedRefs = [];
-
-        for (const refToken of refs) {
-            try {
-                const refVerified = await verifyJwt(refToken);
-                const tObj = {
-                    iss: refVerified.iss,
-                    jti: refVerified.jti,
-                    decoded: refVerified,
-                    token: refToken
-                };
-
-                if (typeof refVerified.revokes === 'string') {
-                    tObj.revokes = refVerified.revokes;
-                    revokeMap[`${refVerified.iss}:${refVerified.revokes}`] = tObj;
-                } else {
-                    // If our current node (the token we’re expanding) was not validated,
-                    // confirm we’re referring to the correct token using sub_key.
-                    if (!validated) {
-                        try {
-                            await verifyJwt(token, {
-                                pubKeyOverride: refVerified.sub_key
-                            });
-                            decodedRefs.push(tObj);
-                        } catch (e) {
-                            // skip: this ref doesn't match our unvalidated parent by sub_key
-                        }
-                    } else {
-                        decodedRefs.push(tObj);
-                    }
-                }
-            } catch {
-                // skip invalid ref tokens
-            }
-        }
-
-        // Filter by revocation and purposes
-        const validNext = decodedRefs.filter((tObj) => {
-            if (revokeMap[`${tObj.iss}:${tObj.jti}`] || revokeMap[`${tObj.iss}:all`]) return false;
-
-            const p = tObj.decoded.purpose;
-            if (typeof p === 'string' && purposes.length) {
-                const tokenPurposes = Object.create(null);
-                p.trim().split(/\s+/).forEach((x) => (tokenPurposes[x] = true));
-                return purposes.every((req) => tokenPurposes[req] === true);
-            }
-            return true;
-        });
-
-        // Enqueue next tokens, record parents, and check for trust anchors
-        for (const next of validNext) {
-            const nextKey = `${next.decoded.iss}:${next.decoded.jti}`;
-            if (visited.has(nextKey)) continue;
-
-            visited.add(nextKey);
-            linkByKey.set(nextKey, {
-                token: next.token,
-                decoded: next.decoded,
-                validated: true // we verified above with verifyJwt
-            });
-            parentMap.set(nextKey, `${decoded.iss}:${decoded.jti}`);
-
-            // Anchor?
-            const isAnchor = await trustAnchorLookup(next.decoded.iss, next.decoded.purpose, trustedIssuers, purposes);
-            if (isAnchor) {
-                // Reconstruct chain from leaf → this anchor
-                const chain = reconstructChain(leafKey, nextKey, parentMap, linkByKey);
-                // Mark trustRoot
-                chain[chain.length - 1].trusted = true;
-
-                if (findAll) {
-                    foundChains.push(chain);
-                    // Keep searching for more, but respect maxDepth naturally
-                } else {
-                    return {
-                        valid: true,
-                        leaf: chain[0],
-                        trustRoot: chain[chain.length - 1],
-                        chain,
-                        purposes: extractEffectivePurposesFromChain(chain),
-                    };
-                }
-            } else {
-                // Continue traversal
-                if (depth + 1 < maxDepth) {
-                    queue.push({
-                        token: next.token,
-                        decoded: next.decoded,
-                        validated: true,
-                        depth: depth + 1
-                    });
-                }
-            }
-        }
-    }
-
-    if (findAll && foundChains.length) {
-        // Normalize to the same shape as the single-path result, but with paths[]
-        return {
-            valid: true,
-            leaf: foundChains[0][0],
-            trustRoot: foundChains[0][foundChains[0].length - 1],
-            chain: foundChains[0],
-            paths: foundChains
-        };
-    }
-
-    return {
-        valid: false,
-        reason: 'untrusted'
-    };
-
-    // ------- helpers --------
-
-}
-
-export function isRevoked(tokenPayload, refList) {
-    if (!Array.isArray(refList)) return false;
-    let decoded;
-
-    for (const refToken of refList) {
-        try {
-            decoded = decodeJwt(refToken);
-            // shortcut immediately if we don't have a revokes field.
-            if (decoded.revokes == tokenPayload.jti || decoded.revokes == 'all') {
-                // we do have a revokes field, so check if everything else matches appropriately
-                if (decoded.kind === 'vch' &&
-                    decoded.iss == tokenPayload.iss &&
-                    decoded.sub == tokenPayload.sub &&
-                    decoded.vch_iss == tokenPayload.vch_iss &&
-                    decoded.vch_sum == tokenPayload.vch_sum) {
-                    // everything matched, so our token is revoked.
-                    return {
-                        revokeToken: refToken,
-                        decoded: decoded
-                    };
-                }
-            }
-        } catch (e) {
-            continue;
-        }
-    }
-
-    // found no revoke tokens in the list, so not revoked
-    return undefined;
-}
-
-export async function isTrustedAnchor(iss, tokenPurpose = [], trustedIssuers = {}, requiredPurposes = []) {
-    const anchorPurposes = trustedIssuers?.[iss];
-    if (!anchorPurposes) return false;
-
-    const trustedPurposes = {};
-    anchorPurposes.forEach(purpose => {
-        trustedPurposes[purpose] = true;
-    });
-
-    if (trustedPurposes['*']) return true;
-
-    let tokenPurposes = {};
-    if (Array.isArray(tokenPurpose)) {
-        tokenPurpose.forEach(purpose => {
-            tokenPurposes[purpose] = true;
-        });
-    } else {
-        if (typeof tokenPurpose == 'string') {
-            tokenPurpose.trim().split(/\s+/).forEach(purpose => {
-                tokenPurposes[purpose] = true;
-            });
-        }
-    }
-
-    return requiredPurposes.every(p => tokenPurposes[p] && trustedPurposes[p]);
-}
-
-export async function canUseForPurpose(token, trustedIssuers, {
-    tokens,
-    resolveFn,
-    purposes,
-    maxDepth = 10
-}) {
-    const result = await verifyTrustChain(token, trustedIssuers, {
-        tokens,
-        resolveFn,
-        purposes: Array.isArray(purposes) ? purposes : [purposes],
-        maxDepth
-    });
-
-    return result.valid;
-}
-
-function extractEffectivePurposesFromChain(chain) {
-    let effective = null;
-
-    chain.forEach(link => {
-        const purposesRaw = link.decoded?.purpose;
-
-        if (typeof purposesRaw === 'string') {
-            const purposeList = purposesRaw.trim().split(/\s+/);
-            const purposeMap = {};
-            purposeList.forEach(p => {
-                purposeMap[p] = true;
-            });
-
-            if (effective === null) {
-                // Initialize effective list
-                effective = purposeList.slice();
-            } else {
-                // Intersect with current list
-                effective = effective.filter(p => purposeMap[p]);
-            }
-        }
-        // If no purpose field, do nothing — it's unconstrained
-    });
-
-    return effective || [];
-}
-
-function isBurnToken(token) {
-    if (token.kind == 'vch:burn') { 
-        if (token.burns == token.iss) {
-            return true;
-        } else {
-            throw new Error('Invalid Burn token, burns is defined but does not match issuer');
-        }
-    } else {
-        return false;
-    }
-}
-
-function isRevocationToken(token) {
-    if (token.kind == 'vch:revoke') {
-        if (typeof token.revokes == 'string') {
-            return true;
-        } else {
-            throw new Error('Invalid Revoke token, no valid revoke target');
-        }
-    } else {
-        return false;
-    } 
-}
+import { validateVouchToken, verifyVouchToken, hashJwt, isBurnToken, isRevocationToken } from './vouch.mjs';
 
 // this just gives us a stable identifier for lookup.
 // we use it in a lot of places, so this gives us 
@@ -633,9 +179,8 @@ export async function prepareTclean(rawTokens) {
 function subjectIdOf(decoded) {
     const subjectIssuer = decoded.vch_iss || decoded.iss;
     const subjectJti    = decoded.sub;
-    return subjectIssuer + "/" + subjectJti;
+    return tokenId(subjectIssuer, subjectJti);
 }
-
 
 // --------------------------------------------
 // Purpose extraction
@@ -724,32 +269,55 @@ function makeVisitKey(decoded, purposeSetOrModel) {
     return tokenId + "|" + arr.join(",");
 }
 
-function vouchsafe_evaluate(trustGraph, startToken, trustedIssuers, purposes, maxDepth) {
+export function vouchsafeEvaluate(trustGraph, startToken, trustedIssuers, requiredPurposes, options = {}) {
 
-    // Extract starting token's decoded payload
+    // Algorithm:
+    // We perform a breadth–first search (BFS) over (token, purpose-set) states,
+    // starting from the leaf token. Each queue entry represents “we have a concrete
+    // path from the leaf to this token, with these effective purposes after all
+    // attenuation so far”. On each step we: (1) check whether the current token’s
+    // issuer is a trusted root and, if so, whether the accumulated purposes satisfy
+    // the caller’s requirements; (2) if not done and within maxDepth, look up all
+    // vouch tokens that reference this token as their subject, apply their purpose
+    // rules to produce a new purpose-set, and enqueue those as new states. The
+    // visited set ensures we never revisit the same token with the same effective
+    // purposes, preventing cycles and redundant work.
+
+    // ============================================================
+    // OPTION DEFAULTING
+    // ============================================================
+    if (typeof options.returnAllValidChains === "undefined") {
+        options.returnAllValidChains = false;
+    }
+    if (typeof options.maxDepth === "undefined") {
+        options.maxDepth = undefined;  // no limit
+    }
+
+    // ============================================================
+    // INITIAL LEAF PURPOSE HANDLING
+    // ============================================================
     const startDecoded = startToken.decoded;
-
-    // Determine initial purpose model of the leaf token
     const startPurposeModel = purposeModeFromDecoded(startDecoded);
 
-    // Determine initial concrete purpose set for traversal.
-    // NOTE:
-    //   S_Any (no purpose claim) means "pass through whatever comes in".
-    //   For the leaf token, this typically results in an empty set unless
-    //   the caller filters for specific purposes later.
     let initialPurposes;
+
     if (startPurposeModel.mode === "any") {
+        // S_ANY → pass through whatever comes in; at leaf this starts empty
         initialPurposes = new Set();
     } else if (startPurposeModel.mode === "empty") {
+        // Explicit empty string → blocks all purposes
         initialPurposes = new Set();
     } else {
+        // Concrete purpose set
         initialPurposes = new Set(startPurposeModel.set);
     }
 
-    // Compute the subject ID for the starting token.
+    // Compute the subject ID (iss/sub pair) of the starting token
     const startSubjectId = subjectIdOf(startDecoded);
 
-    // BFS queue
+    // ============================================================
+    // BFS INITIALIZATION
+    // ============================================================
     const queue = [];
     queue.push({
         token: startToken,
@@ -758,90 +326,141 @@ function vouchsafe_evaluate(trustGraph, startToken, trustedIssuers, purposes, ma
         depth: 0
     });
 
-    // State to prevent revisiting identical evaluation states
-    const visited = new Set();
-
-    // Collect all valid upward chains that reach trusted issuers
-    const validChains = [];
+    const visited = new Set();         // mutation explicitly controlled
+    const validChains = [];            // collect full valid chains when enabled
 
     // ============================================================
-    // BFS Evaluation Loop
+    // BFS LOOP
     // ============================================================
-
     while (queue.length > 0) {
         const frame = queue.shift();
 
-        const currentToken     = frame.token;
-        const currentDecoded   = currentToken.decoded;
-        const currentPurposes  = frame.purposes;
-        const currentChain     = frame.chain;
-        const currentDepth     = frame.depth;
+        const currentToken    = frame.token;
+        const currentDecoded  = currentToken.decoded;
+        const currentPurposes = frame.purposes;
+        const currentChain    = frame.chain;
+        const currentDepth    = frame.depth;
 
         const currentIssuer = currentDecoded.iss;
 
         // ========================================================
-        // TRUST ROOT ACCEPTANCE
+        // TRUST ROOT CHECK
         // ========================================================
         if (trustedIssuers.hasOwnProperty(currentIssuer)) {
 
-            const allowedPurposes = new Set(trustedIssuers[currentIssuer]);
+            const allowedRootPurposes = new Set(trustedIssuers[currentIssuer]);
             const effectivePurposes = new Set();
 
-            // Determine intersection of currentPurposes with allowedPurposes
-            for (const p of currentPurposes) {
-                if (allowedPurposes.has(p)) {
+            // Determine which purposes survive at the trust root
+            const iter = currentPurposes.values();
+            while (true) {
+                const next = iter.next();
+                if (next.done) break;
+                const p = next.value;
+                if (allowedRootPurposes.has(p)) {
                     effectivePurposes.add(p);
                 }
             }
 
+            // If the root grants nothing → not valid
             if (effectivePurposes.size > 0) {
-                // NOTE (Mutation):
-                // clone the chain so stored result is not mutated by future BFS steps
-                validChains.push({
-                    chain: currentChain.slice(),
-                    purposes: Array.from(effectivePurposes)
-                });
+
+                let chainSatisfiesRequirements = true;
+
+                // ===================================================================================
+                // If we have a requiredPurposes, then ALL must be present for this chain to be valid
+                // ===================================================================================
+                if (Array.isArray(requiredPurposes) && requiredPurposes.length > 0) {
+                    // QUICK FAIL:
+                    // If the effective set is smaller than the number of required
+                    // purposes, it is impossible for all to be present.
+                    if (effectivePurposes.size < requiredPurposes.length) {
+                        chainSatisfiesRequirements = false;
+                    } else {
+                        // FULL CHECK:
+                        // Our effective set has the same number or more purposes, so we need to
+                        // ensure that every required purpose is present in effectivePurposes.
+                        for (let i = 0; i < requiredPurposes.length; i++) {
+                            const req = requiredPurposes[i];
+                            if (!effectivePurposes.has(req)) {
+                                chainSatisfiesRequirements = false;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                if (chainSatisfiesRequirements) {
+                    if (options.returnAllValidChains === true) {
+                        // NOTE (Mutation):
+                        // Store a *copy* of the chain because BFS will mutate future frames.
+                        validChains.push({
+                            chain: currentChain.slice(),
+                            purposes: Array.from(effectivePurposes),
+                            trustRoot: currentIssuer
+                        });
+                    } else {
+                        return {
+                            valid: true,
+                            chains: [
+                                {
+                                    chain: currentChain.slice(),
+                                    purposes: Array.from(effectivePurposes),
+                                    trustRoot: currentIssuer
+                                }
+                            ],
+                            effectivePurposes: Array.from(effectivePurposes),
+                            trustRoot: currentIssuer
+                        };
+                    }
+                }
             }
         }
 
         // ========================================================
-        // DEPTH LIMIT
+        // MAX DEPTH CHECK
         // ========================================================
-        if (typeof maxDepth === "number" && currentDepth >= maxDepth) {
+        if (typeof options.maxDepth === "number" && currentDepth >= options.maxDepth) {
             continue;
         }
 
         // ========================================================
         // UPWARD TRAVERSAL
         // ========================================================
-        const subjectId = subjectIdOf(currentDecoded);
 
-        // Parents are all tokens whose subject is this token
+        // For upward traversal, the "subject" we are looking for is the
+        // current token itself: any vouch tokens whose subject is this
+        // token's (iss, jti) pair.
+        //
+        // prepareTclean() indexes by_subject using that (iss, jti) of the
+        // *token being vouched for*, so we must use the current token's
+        // own identity here.
+        const subjectId = currentDecoded.iss + "/" + currentDecoded.jti;
+
         const parents = trustGraph.by_subject[subjectId];
+
+
         if (!parents) {
-            continue; // dead end, no more upward traversal
+            continue; // No further edges upward
         }
 
         for (let i = 0; i < parents.length; i++) {
             const parentToken = parents[i];
             const parentDecoded = parentToken.decoded;
 
-            // Only vch:vouch propagates trust upward
+            // Only vouch tokens propagate upward
             if (parentDecoded.kind !== "vch:vouch") {
                 continue;
             }
 
-            // Get parent's purpose mode
             const parentPurposeModel = purposeModeFromDecoded(parentDecoded);
-
-            // Apply attenuation rules
             const nextPurposes = attenuatePurposes(currentPurposes, parentPurposeModel);
+
             if (!nextPurposes) {
-                // Parent does not propagate usable purposes
-                continue;
+                continue; // Parent wipes out all purposes
             }
 
-            // Build visit key (purpose mode must be encoded)
+            // Build visit key based on issuer + jti + purpose-mode
             let visitKey;
             if (parentPurposeModel.mode === "any") {
                 visitKey = makeVisitKey(parentDecoded, "ANY");
@@ -851,21 +470,20 @@ function vouchsafe_evaluate(trustGraph, startToken, trustedIssuers, purposes, ma
                 visitKey = makeVisitKey(parentDecoded, nextPurposes);
             }
 
-            // Prevent revisiting same state
             if (visited.has(visitKey)) {
                 continue;
             }
 
             // NOTE (Mutation):
-            // Mark as visited before enqueueing, ensuring deterministic traversal
+            // Marking visited before enqueueing ensures we never requeue
             visited.add(visitKey);
 
             // NOTE (Mutation):
-            // Clone previous chain to construct new BFS chain frame
+            // Construct new chain frame by cloning old chain
             const nextChain = currentChain.slice();
             nextChain.push(parentToken);
 
-            // Enqueue next BFS frame
+            // Enqueue upward step
             queue.push({
                 token: parentToken,
                 purposes: nextPurposes,
@@ -876,35 +494,49 @@ function vouchsafe_evaluate(trustGraph, startToken, trustedIssuers, purposes, ma
     }
 
     // ============================================================
-    // AGGREGATE RESULT
+    // AGGREGATE / RETURN RESULTS
     // ============================================================
-    const aggregate = new Set();
-    for (let i = 0; i < validChains.length; i++) {
-        const vc = validChains[i];
-        for (let j = 0; j < vc.purposes.length; j++) {
-            const p = vc.purposes[j];
-            // If caller supplied purposes, restrict to those
-            if (!purposes || purposes.includes(p)) {
-                aggregate.add(p);
-            }
-        }
+
+    // At this point, any chain in validChains has already satisfied
+    // requiredPurposes (if provided). We do NOT aggregate permissions
+    // across chains; each chain is evaluated independently and its
+    // purposes are self-contained. The caller can union them if they
+    // wish, but that is application policy, not core trust logic.
+
+    if (validChains.length === 0) {
+        return {
+            valid: false,
+            chains: [],
+            effectivePurposes: []
+        };
     }
 
+    // We treat the purposes on the first valid chain as the effective
+    // purposes for this evaluation. This is conservative: it never
+    // grants more than a single justified chain supports.
+    const primaryChain = validChains[0];
+
     return {
-        valid: aggregate.size > 0,
+        valid: true,
         chains: validChains,
-        effectivePurposes: Array.from(aggregate)
+        effectivePurposes: Array.from(primaryChain.purposes),
+        // if you’ve added trustRoot on each chain object, this gives the
+        // caller enough data to know which issuer granted these purposes.
+        trustRoot: primaryChain.trustRoot
     };
 }
 
+
+
+
 // ---------------------------------------------------------------------------
-// validateTrustChain(tokens, startToken, trustedIssuers, purposes, maxDepth)
+// validateTrustChain(tokens, startToken, trustedIssuers, purposes, options = {})
 //
 // This is the canonical entrypoint for Vouchsafe trust validation.
 // Steps:
 //   1.  Clean and normalize the raw token set (prepareTclean)
 //   2.  Evaluate the trust graph starting from startToken
-//   3.  Return the result of vouchsafe_evaluate
+//   3.  Return the result of vouchsafeEvaluate
 //
 // Parameters:
 //   tokens          : Array of raw JWT strings
@@ -913,7 +545,8 @@ function vouchsafe_evaluate(trustGraph, startToken, trustedIssuers, purposes, ma
 //   trustedIssuers  : Map of trusted roots -> allowed purposes
 //                     e.g. { "urn:vouchsafe:root.ab...": ["msg-signing", ...] }
 //   purposes        : Optional array of purposes to filter final output
-//   maxDepth        : Optional integer limiting chain depth
+//   options         : evaluator behavior controls: 
+//      maxDepth     : Optional integer limiting chain depth
 //
 // Returns:
 //   {
@@ -924,13 +557,13 @@ function vouchsafe_evaluate(trustGraph, startToken, trustedIssuers, purposes, ma
 //
 // ---------------------------------------------------------------------------
 
-export async function validateTrustChain(tokens, startToken, trustedIssuers, purposes, maxDepth) {
+export async function validateTrustChain(tokens, givenStartToken, trustedIssuers, purposes, options = {}) {
 
     // start token may be a token string or a decoded token object. 
     // we need the latter so if we got a string, decode it ourselves.
-    let realStartToken = startToken;
+    let startToken = givenStartToken;
     if (typeof startToken == 'string') {
-        realStartToken = decodeToken(startToken);
+        startToken = decodeToken(givenStartToken);
     }
     // -----------------------------------------------------------------------
     // Step 1:
@@ -954,7 +587,7 @@ export async function validateTrustChain(tokens, startToken, trustedIssuers, pur
     // Step 2:
     // Evaluate trust using the pure evaluator.
     //
-    // vouchsafe_evaluate:
+    // vouchsafeEvaluate:
     //   - performs BFS upward through vouch edges
     //   - applies purpose attenuation rules
     //   - respects revocation pruning already performed in Step 1
@@ -965,12 +598,12 @@ export async function validateTrustChain(tokens, startToken, trustedIssuers, pur
     // No network access, no external state, no online resolution.
     // A perfect ZI-CG evaluation.
     // -----------------------------------------------------------------------
-    const result = vouchsafe_evaluate(
+    const result = vouchsafeEvaluate(
         trustGraph,
-        realStartToken,
+        startToken,
         trustedIssuers,
         purposes,
-        maxDepth
+        options
     );
 
     // -----------------------------------------------------------------------

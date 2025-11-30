@@ -185,7 +185,7 @@ export async function validateVouchToken(token) {
         }
         // vouch tokens must not reference the signing issuer.
         if (decoded.vch_iss == decoded.iss) {
-            throw new Error('Vouch tokens may not reference a themselves as issuer');
+            throw new Error('Vouch tokens may not reference themselves as issuer:', decoded.iss);
         }
         if (typeof decoded.purpose != 'undefined' && typeof decoded.purpose != 'string') {
             throw new Error('Vouch token purpose must be a valid string ');
@@ -262,4 +262,28 @@ export async function verifyVouchToken(vouchJwt, subjectJwt) {
         vouchPayload,
         subjectPayload
     };
+}
+
+export function isBurnToken(token) {
+    if (token.kind == 'vch:burn') { 
+        if (token.burns == token.iss) {
+            return true;
+        } else {
+            throw new Error('Invalid Burn token, burns is defined but does not match issuer');
+        }
+    } else {
+        return false;
+    }
+}
+
+export function isRevocationToken(token) {
+    if (token.kind == 'vch:revoke') {
+        if (typeof token.revokes == 'string') {
+            return true;
+        } else {
+            throw new Error('Invalid Revoke token, no valid revoke target');
+        }
+    } else {
+        return false;
+    } 
 }
