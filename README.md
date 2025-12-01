@@ -1,20 +1,33 @@
-# Vouchsafe JS
+[![npm version](https://badge.fury.io/js/vouchsafe.svg)](https://www.npmjs.com/package/vouchsafe) [![License](https://img.shields.io/badge/license-BSD--3--Clause-blue)](./LICENSE)
 
-[Vouchsafe](https://getvouchsafe.org/) is **portable, self-verifying identity and trust - in a single token.**
+# Vouchsafe
 
-**Vouchsafe makes JWTs easier while giving them superpowers.**
+[Vouchsafe](https://getvouchsafe.org/) is **portable, self-verifying identity and authorization in a single token.**
+
+It takes the familiar JWT format and extends it into a complete,
+offline-capable trust system.  A Vouchsafe token isn't just a signed blob of
+claims, it is a **cryptographically self-contained identity + proof +
+authorization statement** that needs **no infrastructure** to validate.
+
+**Vouchsafe makes JWTs radically simpler while giving them real-world superpowers.**
 
 Each Vouchsafe token is "just a JWT", but enhanced with:
 
-* a **self-validating URN** that proves the issuer's identity
-* the **public key embedded inside the token**
-* a cryptographic signature binding it all together
+* a **self-validating URN** that cryptographically proves the issuer's identity  
+* the **public key embedded inside the token**  
+* a signature that binds identity, key, and claims into a single verifiable object  
 
-That means a Vouchsafe token **carries everything needed for verification** -
-identity, proof, and trust - right inside the token.  
-No registries, no key servers, no online lookups.
+Because all trust material is carried *inside* the token, a Vouchsafe token
+**carries everything needed for verification:**  identity, proof, and
+authorization with:
 
-You configure **who is allowed to do what**:
+* no registries  
+* no key servers  
+* no OIDC handshakes  
+* no online lookups  
+* no infrastructure dependencies at all  
+
+You declare **who is allowed to do what** with a simple, explicit mapping:
 
 ```js
 const trustedIssuers = {
@@ -22,16 +35,27 @@ const trustedIssuers = {
         'webhook:order_placed'
     ]
 };
-````
+```
 
-Vouchsafe guarantees that if a token says it came from `alice`, the URN and key
-inside it really do match - and the signature proves it.
+Vouchsafe guarantees that if a token claims it came from `alice`, then:
 
-Whether you're authenticating users, confirming purchases, issuing verifiable
-attestations, or sending tamper-proof webhooks, Vouchsafe makes it easy to
-verify **who sent what, and what they are allowed to do.**
+ * the embedded URN matches the embedded public key  
+ * the public key matches the signature  
+ * and the claims are tied to that identity with no possibility of spoofing  
 
-> Built for zero-infrastructure / offline systems, but useful anywhere identity and trust matter.
+Beyond basic authentication, Vouchsafe gives you powerful **authorization primitives**:
+ * **attestations** (statements of fact)  
+ * **vouches** (delegation and trust propagation)  
+ * **revocations** (withdraw trust cleanly and formally)  
+ * **multi-hop trust chains** (with purpose attenuation)  
+
+Whether you're authenticating users, sending secure offline messages, verifying
+webhooks, or delegating permissions safely, Vouchsafe lets you validate **who
+sent what, and what they are allowed to do**  even across multiple
+intermediaries.
+
+> Designed for zero-infrastructure and offline environments, but useful
+> anywhere identity and trust matter.
 
 This library implements Vouchsafe in JavaScript for both Node.js and browser
 environments.
