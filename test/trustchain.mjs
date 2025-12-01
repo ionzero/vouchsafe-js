@@ -241,6 +241,125 @@ describe("Vouchsafe evaluator - fresh-minted identities each test", function () 
         assert.equal(res2.valid, false);
     });
 
+    it("attenuates when a vouch vouches for another vouch from the same issuer", async function () {
+
+        const A = await createVouchsafeIdentity("AAA");
+        const B = await createVouchsafeIdentity("BBB");
+        const R = await createVouchsafeIdentity("RRR");
+
+        const attest = await createAttestation(
+            A.urn, A.keypair,
+            { purpose: "file-storage msg-signing" }
+        );
+
+        // B attenuates to msg-signing only
+        const v1 = await createVouchToken(
+            attest,
+            B.urn,
+            B.keypair,
+            { purpose: "file-storage msg-signing" }
+        );
+
+        // B vouches for their Vouch
+        const v2 = await createVouchToken(
+            v1,
+            B.urn,
+            B.keypair,
+            { purpose: "msg-signing" }
+        );
+
+        const v3 = await createVouchToken(
+            v2,
+            R.urn,
+            R.keypair,
+            { purpose: "file-storage msg-signing" }
+        );
+
+        const newTokens = [attest, v1, v2, v3];
+
+        const trusted = {
+            [R.urn]: ["msg-signing", "file-storage"]
+        };
+
+
+        const res = await validateTrustChain(
+            newTokens,
+            attest,
+            trusted,
+            ["msg-signing"],
+            {}
+        );
+        const res2 = await validateTrustChain(
+            newTokens,
+            attest,
+            trusted,
+            ["msg-signing", "file-storage"],
+            {}
+        );
+
+        assert.equal(res.valid, true);
+        assert.equal(res2.valid, false);
+    });
+
+    it("purpose can not expand when a vouch vouches for another vouch from the same issuer", async function () {
+
+        const A = await createVouchsafeIdentity("AAA");
+        const B = await createVouchsafeIdentity("BBB");
+        const R = await createVouchsafeIdentity("RRR");
+
+        const attest = await createAttestation(
+            A.urn, A.keypair,
+            { purpose: "msg-signing" }
+        );
+
+        // B attenuates to msg-signing only
+        const v1 = await createVouchToken(
+            attest,
+            B.urn,
+            B.keypair,
+            { purpose: "msg-signing" }
+        );
+
+        // B vouches for their Vouch
+        const v2 = await createVouchToken(
+            v1,
+            B.urn,
+            B.keypair,
+            { purpose: "file-storage msg-signing" }
+        );
+
+        const v3 = await createVouchToken(
+            v2,
+            R.urn,
+            R.keypair,
+            { purpose: "file-storage msg-signing" }
+        );
+
+        const newTokens = [attest, v1, v2, v3];
+
+        const trusted = {
+            [R.urn]: ["msg-signing"]
+        };
+
+
+        const res = await validateTrustChain(
+            newTokens,
+            attest,
+            trusted,
+            ["msg-signing"],
+            {}
+        );
+        const res2 = await validateTrustChain(
+            newTokens,
+            attest,
+            trusted,
+            ["msg-signing", "file-storage"],
+            {}
+        );
+
+        assert.equal(res.valid, true);
+        assert.equal(res2.valid, false);
+    });
 
     // ============================================================
     // 6. maxDepth blocking the chain

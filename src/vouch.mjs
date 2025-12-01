@@ -183,10 +183,6 @@ export async function validateVouchToken(token) {
         if (typeof decoded.revokes != 'undefined') {
             throw new Error('Vouch tokens may not have revokes');
         }
-        // vouch tokens must not reference the signing issuer.
-        if (decoded.vch_iss == decoded.iss) {
-            throw new Error('Vouch tokens may not reference themselves as issuer:', decoded.iss);
-        }
         if (typeof decoded.purpose != 'undefined' && typeof decoded.purpose != 'string') {
             throw new Error('Vouch token purpose must be a valid string ');
         }
