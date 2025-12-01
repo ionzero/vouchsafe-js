@@ -1,12 +1,12 @@
 {
   "name": "vouchsafe",
-  "version": "1.5.5",
-  "description": "Vouchsafe Decentralized Identity and Trust Verification module",
+  "version": "2.0.0",
+  "description": "Self-verifying identity and offline trust verification for JWTs, including attestations, vouches, revocations, and multi-hop trust chains.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/ionzero/vouchsafe-js.git"
   },
-  "homepage": "https://github.com/ionzero/vouchsafe",
+  "homepage": "https://getvouchsafe.org/",
   "keywords": [
     "identity",
     "trust",
@@ -20,7 +20,21 @@
     "authentication",
     "authorization",
     "webhooks",
-    "webhook"
+    "webhook",
+    "zi-cg",
+    "zero-infrastructure",
+    "capability-graph",
+    "offline",
+    "offline-first",
+    "zicg",
+    "ed25519",
+    "attestation",
+    "delegation",
+    "revocation",
+    "pki",
+    "self-sovereign",
+    "capabilities",
+    "web-of-trust"
   ],
   "author": "Jay Kuri",
   "license": "BSD-3-Clause",
