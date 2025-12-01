@@ -300,7 +300,7 @@ const result = await validateTrustChain(
 console.log(result.valid); // true if a valid chain to a trusted issuer exists
 
 if (result.valid) {
-    console.log('Email is trusted via:', result.trustRoot.iss);
+    console.log('Email is trusted via:', result.trustRoot);
 }
 ```
 
@@ -422,7 +422,7 @@ if (!result.valid) {
     throw new Error('Upload not authorized');
 }
 
-const claims = getAppClaims(uploadRequest.decoded);
+const claims = getAppClaims(result.subjectToken.decoded);
 console.log('Authorized upload of:', claims.filename);
 ```
 
@@ -485,7 +485,7 @@ async function validateTrustChain(
 ): Promise<{
     valid: boolean;
     subjectToken: TokenObject;
-    trustRoot?: TokenObject;
+    trustRoot?: string;
     chains?: Array<{
         chain: TokenObject[];
         purposes: string[];
@@ -507,14 +507,13 @@ async function validateTrustChain(
 
 * `valid` - `true` if at least one chain from the subject token to a trusted issuer satisfied all `requiredPurposes`.
 * `subjectToken` - the decoded form of the subject token (for convenience).
-* `trustRoot` - the final token in the chain whose issuer is present in `trustedIssuers`.
+* `trustRoot`: URN of the issuer that granted trust on that chain
 * `chains` - when `returnAllValidChains` is `true`, an array of valid chains, each with:
-
   * `chain`: tokens from subject ... trust root
   * `purposes`: purposes that survived along that specific chain
   * `trustRoot`: URN of the issuer that granted trust on that chain
 * `effectivePurposes` - the purposes granted by the chain(s) that satisfied `requiredPurposes`.
-  In the default mode (`returnAllValidChains: false`) this is the set of purposes on the first valid chain found.
+  This is the set of purposes on the first valid chain found.
 
 The evaluator always operates on a **cleaned** trust graph; `validateTrustChain`
 internally calls `prepareTclean` to:
