@@ -8,15 +8,12 @@ describe('CommonJS export compatibility', () => {
             'verifyUrnMatchesKey',
             'createJwt',
             'verifyJwt',
+            'createAttestation',
             'createVouchToken',
             'createRevokeToken',
             'validateVouchToken',
             'verifyVouchToken',
-            'makeStaticResolver',
-            'isTrustedAnchor',
-            'isRevoked',
-            'verifyTrustChain',
-            'canUseForPurpose'
+            'validateTrustChain',
         ];
 
         for (const name of expectedExports) {

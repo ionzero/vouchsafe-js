@@ -2,15 +2,16 @@ const assert = require('assert');
 const util = require('util');
 const {
     createVouchsafeIdentity,
+    createAttestation,
     createJwt,
     createVouchToken,
-    verifyTrustChain
+    validateTrustChain
 } = require('../dist/index.js');
 
-describe('verifyTrustChain()', function() {
+describe('validateTrustChain()', function() {
     let leafIdentity, midIdentity, rootIdentity;
     let secondMidIdentity, secondRootIdentity;
-    let leafToken, vouchToken, attestationToken;
+    let leafToken, vouchToken, delegateToken;
     let secondVouchToken, secondAttestationToken;
     const trustedIssuers = {};
     const purpose = 'msg-signing';
@@ -35,7 +36,7 @@ describe('verifyTrustChain()', function() {
             purpose: 'msg-signing'
         };
         // console.log(leafIdentity);
-        leafToken = await createJwt(leafIdentity.urn, leafIdentity.keypair.publicKey, leafIdentity.keypair.privateKey, leafClaims);
+        leafToken = await createAttestation(leafIdentity.urn, leafIdentity.keypair, leafClaims);
 
         // Mid identity vouches for leaf
         vouchToken = await createVouchToken(leafToken, midIdentity.urn, midIdentity.keypair, {
@@ -44,7 +45,7 @@ describe('verifyTrustChain()', function() {
         });
 
         // Root identity vouches for mid's vouch
-        attestationToken = await createVouchToken(vouchToken, rootIdentity.urn, rootIdentity.keypair, {
+        delegateToken = await createVouchToken(vouchToken, rootIdentity.urn, rootIdentity.keypair, {
             //sub_key: midIdentity.keypair.publicKey,
             purpose
         });
@@ -58,62 +59,86 @@ describe('verifyTrustChain()', function() {
         });
     });
 
+/*
+        const res = await validateTrustChain(
+            tokens,
+            leafAttest,
+            trustedIssuers,
+            undefined,
+            {}
+        );
+*/
     it('should validate a trust path from leaf to root', async function() {
-        const result = await verifyTrustChain(leafToken, trustedIssuers, {
-            tokens: [vouchToken, attestationToken],
-            purposes: [purpose]
-        });
+        const result = await validateTrustChain(
+            [leafToken, vouchToken, delegateToken],
+            leafToken,
+            trustedIssuers,
+            [purpose]
+        );
+        //console.warn('RESULT:', result);
 
         assert.strictEqual(result.valid, true);
-        assert.ok(Array.isArray(result.chain));
-        assert.strictEqual(result.chain.length, 3);
-        let final_link = result.chain[result.chain.length - 1];
+        assert.ok(Array.isArray(result.chains));
+        assert.strictEqual(result.chains[0].chain.length, 3);
+        let final_link = result.chains[0].chain[result.chains[0].chain.length - 1];
         assert.strictEqual(final_link.decoded.iss, rootIdentity.urn);
     });
 
-    it('should fail if no attestation is present', async function() {
-        const result = await verifyTrustChain(leafToken, trustedIssuers, {
-            tokens: [vouchToken],
-            purposes: [purpose]
-        });
+    it('should fail if no delegate is present', async function() {
+        const result = await validateTrustChain(
+            [leafToken, vouchToken],
+            leafToken,
+            trustedIssuers,
+            [purpose]
+        );
 
-        // console.warn('result', result);
+        //console.warn('result', result);
         assert.strictEqual(result.valid, false);
-        assert.strictEqual(result.reason, 'untrusted');
     });
 
     it('should fail if purpose does not match', async function() {
-        const result = await verifyTrustChain(leafToken, trustedIssuers, {
-            tokens: [vouchToken, attestationToken],
-            purposes: ['not-allowed']
-        });
+        const result = await validateTrustChain(
+            [leafToken, vouchToken, delegateToken],
+            leafToken,
+            trustedIssuers,
+            ['not-allowed']
+        );
 
+        //console.warn('result', result);
         assert.strictEqual(result.valid, false);
     });
 
     it('should return multiple paths when findAll is enabled', async function() {
-        const result = await verifyTrustChain(leafToken, trustedIssuers, {
-            tokens: [vouchToken, attestationToken],
-            purposes: [purpose],
-            findAll: true
-        });
-        // console.warn('result', util.inspect(result));
+        const result = await validateTrustChain(
+            [leafToken, vouchToken, delegateToken],
+            leafToken,
+            trustedIssuers,
+            [purpose],
+            { returnAllValidChains: true }
+        );
+        //console.warn('result', util.inspect(result));
 
         assert.strictEqual(result.valid, true);
-        assert.ok(result.paths.length >= 1);
+        assert.ok(result.chains.length >= 1);
     });
+
     it('should validate a trust path if leaf is trusted directly', async function() {
         let leafTrustedIssuers = trustedIssuers;
-        leafTrustedIssuers[leafIdentity.urn] = ['logging', 'msg-signing', 'do-stuff'];
-        const result = await verifyTrustChain(leafToken, leafTrustedIssuers, {
-            purposes: [purpose]
-        });
+        leafTrustedIssuers[leafIdentity.urn] = ['msg-signing', 'do-stuff'];
+        const result = await validateTrustChain(
+            [leafToken],
+            leafToken,
+            trustedIssuers,
+            [purpose]
+        );
+        //console.warn('result', util.inspect(result));
 
         assert.strictEqual(result.valid, true);
-        assert.ok(Array.isArray(result.chain));
-        assert.strictEqual(result.chain.length, 1);
-        let final_link = result.chain[result.chain.length - 1];
+        assert.ok(Array.isArray(result.chains[0].chain));
+        assert.strictEqual(result.chains[0].chain.length, 1);
+        let final_link = result.chains[0].chain[result.chains[0].chain.length - 1];
         assert.strictEqual(final_link.decoded.iss, leafIdentity.urn);
 
     });
 });
+

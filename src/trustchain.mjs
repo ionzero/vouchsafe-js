@@ -424,7 +424,7 @@ function vouchsafeEvaluate(trustGraph, startToken, trustedIssuers, requiredPurpo
                                 }
                             ],
                             effectivePurposes: Array.from(effectivePurposes),
-                            leaf: startToken,
+                            subjectToken: startToken,
                             trustRoot: currentIssuer
                         };
                     }
@@ -537,7 +537,7 @@ function vouchsafeEvaluate(trustGraph, startToken, trustedIssuers, requiredPurpo
         effectivePurposes: Array.from(primaryChain.purposes),
         // if you’ve added trustRoot on each chain object, this gives the
         // caller enough data to know which issuer granted these purposes.
-        leaf: startToken,
+        subjectToken: startToken,
         trustRoot: primaryChain.trustRoot
     };
 }

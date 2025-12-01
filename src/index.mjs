@@ -30,7 +30,15 @@ export {
 export {
     validateTrustChain,
     decodeToken,
-} from './trustchain.mjs'; // or wherever you place it
+} from './trustchain.mjs'; 
+
+// legacy verifyTrustChain from earlier version of
+// the module implemented via offical validateTrustChain.
+// Here only for backwards compatibility. 
+// DON'T USE verifyTrustChain IN NEW CODE.
+export {
+    verifyTrustChain,
+} from './legacy.mjs'; 
 
 export { Identity } from './Identity.mjs';
 

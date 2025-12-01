@@ -4,7 +4,7 @@ import path from 'path';
 import { Command } from 'commander';
 import {
   validateVouchToken,
-  verifyTrustChain,
+  validateTrustChain,
 } from '../index.mjs'; // same import style as your other CLI
 
 const program = new Command();
@@ -99,13 +99,10 @@ function error(...args) {
       // Build token set for chain resolution (include subject too, dedup)
       const chainTokens = uniqPreserveOrder([subject, ...extras]);
 
-      const result = await verifyTrustChain(subject, trusted, {
-        tokens: chainTokens,
-        purposes,
-      });
+      const result = await validateTrustChain(chainTokens, subject, trusted, purposes);
 
       valid = !!(result && result.valid);
-      payload = result && result.payload ? result.payload : null;
+      payload = result && result?.subjectToken?.decoded ? result.subjectToken.decoded : null;
     } else {
       // Basic validation of a single Vouchsafe token
       // Validates structure, URN<->key binding, signature, timestamps. Throws on error.
