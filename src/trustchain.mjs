@@ -94,7 +94,8 @@ async function prepareTclean(rawTokens) {
         // Index by sub for graph construction and revocation
         let iss_sub = tokenId(subject_iss, decoded.sub);
 
-        if (!isBurn) {
+        // a token that refers to itself should not be form an edge, so should not be in by_subject
+        if (!isBurn && decoded.sub != decoded.jti) {
             if (!tokenGraph.by_subject[iss_sub]) {
                 tokenGraph.by_subject[iss_sub] = [];
             }
