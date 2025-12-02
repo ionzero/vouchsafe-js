@@ -6,6 +6,7 @@ import {
     createVouchsafeIdentity,
     createAttestation,
     createVouchToken,
+    createBurnToken,
     decodeToken,
     validateTrustChain
 } from "../src/index.mjs";
@@ -354,6 +355,65 @@ describe("Vouchsafe evaluator - fresh-minted identities each test", function () 
             attest,
             trusted,
             ["msg-signing", "file-storage"],
+            {}
+        );
+
+        assert.equal(res.valid, true);
+        assert.equal(res2.valid, false);
+    });
+
+    it("Burn token prevents delegation", async function () {
+
+        const A = await createVouchsafeIdentity("AAA");
+        const B = await createVouchsafeIdentity("BBB");
+        const R = await createVouchsafeIdentity("RRR");
+
+        const attest = await createAttestation(
+            A.urn, A.keypair,
+            { purpose: "file-storage msg-signing" }
+        );
+
+        // B attenuates to msg-signing only
+        const v1 = await createVouchToken(
+            attest,
+            B.urn,
+            B.keypair,
+            { purpose: "msg-signing" }
+        );
+
+        // root makes no further restriction
+        const v2 = await createVouchToken(
+            v1,
+            R.urn,
+            R.keypair,
+            { purpose: "msg-signing" }
+        );
+
+        const newTokens = [attest, v1, v2];
+
+        const trusted = {
+            [R.urn]: ["msg-signing"]
+        };
+
+        const burn1 = await createBurnToken(
+            B.urn,
+            B.keypair,
+        );
+
+        const res = await validateTrustChain(
+            newTokens,
+            attest,
+            trusted,
+            ["msg-signing"],
+            {}
+        );
+        const newTokens2 = [burn1].concat(newTokens);
+
+        const res2 = await validateTrustChain(
+            newTokens2,
+            attest,
+            trusted,
+            ["msg-signing"],
             {}
         );
 

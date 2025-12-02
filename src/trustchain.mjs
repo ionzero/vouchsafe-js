@@ -94,10 +94,12 @@ async function prepareTclean(rawTokens) {
         // Index by sub for graph construction and revocation
         let iss_sub = tokenId(subject_iss, decoded.sub);
 
-        if (!tokenGraph.by_subject[iss_sub]) {
-            tokenGraph.by_subject[iss_sub] = [];
+        if (!isBurn) {
+            if (!tokenGraph.by_subject[iss_sub]) {
+                tokenGraph.by_subject[iss_sub] = [];
+            }
+            tokenGraph.by_subject[iss_sub].push(v);
         }
-        tokenGraph.by_subject[iss_sub].push(v);
     }
 
     // Pass 4: Apply revocations after full indexing
