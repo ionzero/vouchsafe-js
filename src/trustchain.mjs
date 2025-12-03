@@ -23,10 +23,11 @@ export async function decodeToken(raw_token) {
     return token_obj;
 }
 
-async function prepareTclean(rawTokens) {
+async function prepareTclean(rawTokens, trustedIssuers) {
     const validated = [];
     const seenIssJTI = new Set();
     const burnedIdentities = new Set();
+    let foundTrustedIssuerToken = false;
 
     //console.log('raw', JSON.stringify(rawTokens, undefined, 4));
     // Step 1: Collect our valid tokens, validate, decode, compute token hash.
@@ -38,6 +39,10 @@ async function prepareTclean(rawTokens) {
         } catch(e) {
             console.error('Unable to decode token: ', e);
             continue;
+        }
+
+        if (trustedIssuers.hasOwnProperty(current_token.decoded.iss)) {
+            foundTrustedIssuerToken = true;
         }
 
         //console.log('decoded: ', current_token);
@@ -60,6 +65,14 @@ async function prepareTclean(rawTokens) {
         }
     }
     //console.log(validated);
+    //
+    // if we did not find a single trusted issuer in our full token set,
+    // there is no way for DAG evaluation to succeed, so every token chain 
+    // is effectively invalidated. If we detect this state, we throw an
+    // error immediately, before we do any more work. 
+    if (!foundTrustedIssuerToken) {
+        throw new Error('No Trusted Issuer tokens found in token set, evaluation can not succeed');
+    }
 
     // Pass 3: Start building our graph structure - filling in by_jti and by_sub for all non-revocation tokens.
     const tokenGraph = {
@@ -67,6 +80,8 @@ async function prepareTclean(rawTokens) {
         by_subject: {},
         burned_identities: burnedIdentities
     };
+
+
     const revocations = [];
 
     // loop over our valid tokens
@@ -603,7 +618,20 @@ export async function validateTrustChain(tokens, givenStartToken, trustedIssuers
     // This produces a fully self-contained trustGraph suitable
     // for pure, offline ZI-CG evaluation.
     // -----------------------------------------------------------------------
-    const trustGraph = await prepareTclean(tokenSet);
+    let trustGraph;
+    try {
+        trustGraph = await prepareTclean(tokenSet, trustedIssuers);
+    } catch(e) {
+        // an error here likely means we had bad tokens or we don't have
+        // any trustedIssuer issued tokens. Either way, we can not
+        // continue
+        console.error('Error encountered while preparing Tclean: ', e);
+        return {
+            valid: false,
+            chains: [],
+            effectivePurposes: []
+        };
+    }
 
     // -----------------------------------------------------------------------
     // Step 2:
