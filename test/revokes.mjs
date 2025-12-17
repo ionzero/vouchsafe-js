@@ -96,4 +96,43 @@ describe('validateTrustChain() - revocation cases', () => {
         assert.strictEqual(result.valid, true, 'Expected success without revokes');
         assert.deepEqual(result.effectivePurposes, ['msg-signing'], 'Expected valid trust path without revocation');
     });
+
+
+    it('should fail when the leaf attestation is revoked', async () => {
+        const tokens = [
+            leafToken,
+            midVouch,
+            rootVouch,
+        ];
+
+        // Sanity check: valid before revocation
+        const res = await validateTrustChain(
+            tokens,
+            leafToken,
+            trustedIssuers,
+            [purpose]
+        );
+
+        assert.strictEqual(res.valid, true, 'Expected success before leaf revocation');
+
+        // Revoke the leaf attestation
+        const revokeLeaf = await revokeVouchToken(leafToken, leafIdentity.keypair);
+
+        const tokensAfterRevoke = [
+            revokeLeaf,
+            leafToken,
+            midVouch,
+            rootVouch,
+        ];
+
+        const resAfterRevoke = await validateTrustChain(
+            tokensAfterRevoke,
+            leafToken,
+            trustedIssuers,
+            [purpose]
+        );
+
+        assert.strictEqual(resAfterRevoke.valid, false, 'Expected failure after leaf revocation');
+    });
+
 });

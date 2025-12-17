@@ -79,13 +79,19 @@ export async function revokeVouchToken(vouchToken, issuerKeyPair, args = {}) {
         ...args,
         jti: args.jti || crypto.randomUUID(),
         sub: decodedVouchToken.sub,
-        vch_sum: decodedVouchToken.vch_sum,
-        vch_iss: decodedVouchToken.vch_iss,
         revokes: decodedVouchToken.jti,
     };
 
-    //console.log('vouchToken', decodedVouchToken);
-    //console.log('claims', claims);
+    // if we are revoking a vouch, our vch_sum and vch_iss should match the vouch
+    if (decodedVouchToken.kind == 'vch:vouch') {
+        claims.vch_sum = decodedVouchToken.vch_sum; 
+        claims.vch_iss = decodedVouchToken.vch_iss;
+    } else if (decodedVouchToken.kind == 'vch:attest') {
+        // if we are revoking an attestation, vch_sum and vch_iss match the token itself
+        claims.vch_sum = await hashJwt(vouchToken);
+        claims.vch_iss = decodedVouchToken.iss;
+    }
+
     return await createRevokeToken(claims, decodedVouchToken.iss, issuerKeyPair)
 }
 

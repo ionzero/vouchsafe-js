@@ -121,19 +121,31 @@ async function prepareTclean(rawTokens, trustedIssuers) {
     // Pass 4: Apply revocations after full indexing
     for (const r of revocations) {
         const revoke_token = r.decoded;
-
         const target_id = tokenId(revoke_token.vch_iss, revoke_token.sub);
 
+        let revoke_candidates = [];
+
         // get all the tokens that reference this iss/sub
-        const candidates = tokenGraph.by_subject[target_id];
-        if (!candidates || candidates.length === 0) {
+        let vouch_candidates = tokenGraph.by_subject[target_id];
+        if (vouch_candidates && vouch_candidates.length > 0) {
+            revoke_candidates = [...vouch_candidates];
+        }
+
+        // we might be revoking an attestation, in which case
+        // we need to look it up directly
+        let attest_candidate = tokenGraph.by_iss_jti[target_id];
+        if (attest_candidate) {
+            revoke_candidates.push(attest_candidate);
+        }
+
+        if (!revoke_candidates || revoke_candidates.length === 0) {
             continue;
         }
 
         // if our revokes field  have to revoke all - we find all
         if (revoke_token.revokes === "all") {
             const remaining = [];
-            for (const tok of candidates) {
+            for (const tok of revoke_candidates) {
                 const candidate_token = tok.decoded;
                 // we don't revoke burns or other revokes.
                 if (isBurnToken(candidate_token) || isRevocationToken(candidate_token)) {
@@ -157,7 +169,7 @@ async function prepareTclean(rawTokens, trustedIssuers) {
         } else {
             const remaining = [];
 
-            for (const tok of candidates) {
+            for (const tok of revoke_candidates) {
                 const candidate_token = tok.decoded;
                 const candidate_hash = tok.hash;
                 if (isBurnToken(candidate_token) || isRevocationToken(candidate_token)) {
@@ -374,6 +386,13 @@ function vouchsafeEvaluate(trustGraph, startToken, trustedIssuers, requiredPurpo
         const currentDepth    = frame.depth;
 
         const currentIssuer = currentDecoded.iss;
+
+        // tokens from burned identities should not have made it onto the graph,
+        // so this shouldn't happen, but just in case it slips by somehow: immediately skip if identity is burned
+        if (trustGraph.burned_identities.has(currentDecoded.iss)) {
+            continue;
+        }
+
 
         // ========================================================
         // TRUST ROOT CHECK
@@ -593,10 +612,6 @@ function vouchsafeEvaluate(trustGraph, startToken, trustedIssuers, requiredPurpo
 
 export async function validateTrustChain(tokens, givenStartToken, trustedIssuers, purposes, options = {}) {
 
-    // start token must be the token string, not a decoded token, but
-    // we need it decoded also so we decode it ourselves.
-    let startToken = givenStartToken;
-    startToken = await decodeToken(givenStartToken);
 
     // our Token set must include the start token so the graph can be built.
     // if start token is already present → safe to use as-is - otherwise copy + append
@@ -633,6 +648,24 @@ export async function validateTrustChain(tokens, givenStartToken, trustedIssuers
         };
     }
 
+
+    // decode the given start token so we can ensure it's still part of the 
+    // cleaned token graph
+    let startToken = await decodeToken(givenStartToken);
+
+    // load our start token from the graph
+    let found_start_token = trustGraph.by_iss_jti[tokenId(startToken.decoded.iss, startToken.decoded.jti)];
+
+    // if we didn't find our start token, 
+    // it was likely revoked or burned. Fail immediately.
+    if (typeof found_start_token != 'object') {
+        return {
+            valid: false,
+            chains: [],
+            effectivePurposes: []
+        };
+    };
+
     // -----------------------------------------------------------------------
     // Step 2:
     // Evaluate trust using the pure evaluator.
@@ -650,7 +683,7 @@ export async function validateTrustChain(tokens, givenStartToken, trustedIssuers
     // -----------------------------------------------------------------------
     const result = vouchsafeEvaluate(
         trustGraph,
-        startToken,
+        found_start_token,
         trustedIssuers,
         purposes,
         options
