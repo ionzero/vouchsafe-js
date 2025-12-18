@@ -4,28 +4,48 @@
 
 [Vouchsafe](https://getvouchsafe.org/) is **portable, self-verifying identity and authorization in a single token.**
 
-It takes the familiar JWT format and extends it into a complete,
-offline-capable trust system.  A Vouchsafe token isn't just a signed blob of
-claims, it is a **cryptographically self-contained identity + proof +
-authorization statement** that needs **no infrastructure** to validate.
+A Vouchsafe token is a **self-authenticating statement**.
+Whoever created the token proves who they are inside the token itself.
+If you can verify it, you already know who made the statement and what they were
+allowed to say, without looking anything up or calling back to an authority.
 
-**Vouchsafe makes JWTs radically simpler while giving them real-world superpowers.**
+It takes the familiar JWT format and extends it into a complete trust system
+that can be evaluated offline. JWT is used as a familiar container, but the
+semantics are different. Vouchsafe tokens represent portable trust statements,
+not session artifacts.
 
-Each Vouchsafe token is "just a JWT", but enhanced with:
+A Vouchsafe token is not just a signed blob of claims.
+It is a **cryptographically self-contained identity, proof, and authorization
+statement** that needs **no infrastructure** to validate.
+
+Put simply, **a Vouchsafe token is a JWT that proves its own authenticity**
+without requiring prior key exchange. If a Vouchsafe token validates, **you know
+it was issued by the identity it claims and that its contents have not been
+tampered with**.
+
+**Vouchsafe makes JWTs simpler while giving them real-world superpowers.**
+
+Each Vouchsafe token uses the JWT format, but is enhanced with:
 
 * a **self-validating URN** that cryptographically proves the issuer's identity  
 * the **public key embedded inside the token**  
 * a signature that binds identity, key, and claims into a single verifiable object  
 
-Because all trust material is carried *inside* the token, a Vouchsafe token
-**carries everything needed for verification:**  identity, proof, and
+Because identity, proof, and authorization are bound together, a verifier does
+not need any shared secrets, registries, or prior coordination to validate a
+token. All trust material is carried *inside* the token, so a Vouchsafe token
+**carries everything needed for verification:** identity, proof, and
 authorization with:
 
+* no API calls  
 * no registries  
 * no key servers  
 * no OIDC handshakes  
-* no online lookups  
 * no infrastructure dependencies at all  
+
+Trust configuration in Vouchsafe is explicit and local.
+Instead of copying API keys, registering shared secrets, or configuring callback
+endpoints, you declare which identities you trust and for what purposes.
 
 You declare **who is allowed to do what** with a simple, explicit mapping:
 
@@ -44,15 +64,25 @@ Vouchsafe guarantees that if a token claims it came from `alice`, then:
  * and the claims are tied to that identity with no possibility of spoofing  
 
 Beyond basic authentication, Vouchsafe gives you powerful **authorization primitives**:
+
  * **attestations** (statements of fact)  
  * **vouches** (delegation and trust propagation)  
  * **revocations** (withdraw trust cleanly and formally)  
  * **multi-hop trust chains** (with purpose attenuation)  
 
-Whether you're authenticating users, sending secure offline messages, verifying
-webhooks, or delegating permissions safely, Vouchsafe lets you validate **who
-sent what, and what they are allowed to do**  even across multiple
+These are composable primitives that let you express real trust relationships
+directly in data, rather than encoding them implicitly in application logic or
+infrastructure.
+
+Whether you're verifying webhooks, authenticating API clients, sending secure
+offline messages, or delegating permissions safely, Vouchsafe lets you validate
+who sent what and what they are allowed to do, even across multiple
 intermediaries.
+
+A common pattern is letting users generate their own keys, provide their URN to
+your service, and then granting trust for specific purposes, without issuing or
+managing API keys.
+
 
 > Designed for zero-infrastructure and offline environments, but useful
 > anywhere identity and trust matter.
@@ -789,7 +819,8 @@ For advanced use  you can call the building blocks directly.
 
 Vouchsafe is designed to be:
 
-* **Self-contained** - tokens carry their own proof.
+* **Self-contained** - tokens are self-authenticating statements that carry their
+  own proof of identity and authorization.
 * **Zero-infrastructure** - works without CAs, DID resolvers, or online key servers.
 * **Human-scale** - maps naturally to how humans think about trust and delegation.
 
