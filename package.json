@@ -1,6 +1,6 @@
 {
   "name": "vouchsafe",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "Self-verifying identity and offline trust verification for JWTs, including attestations, vouches, revocations, and multi-hop trust chains.",
   "repository": {
     "type": "git",
