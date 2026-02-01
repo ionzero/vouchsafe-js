@@ -1,6 +1,12 @@
 import { SignJWT,  importPKCS8 } from 'jose';
 import assert from 'assert';
-import { createVouchsafeIdentity, createAttestation, validateVouchToken, decodeJwt } from '../src/index.mjs';
+import { 
+    createVouchsafeIdentity, 
+    createAttestation,
+    validateVouchToken,
+    validateTrustChain,
+    decodeJwt 
+} from '../src/index.mjs';
 
 function chunk(str, len = 64) {
     return str.match(new RegExp(`.{1,${len}}`, 'g')).join('\n');
@@ -97,6 +103,21 @@ describe('createAttestation()', function() {
         } catch (err) {
             assert.ok(/iss.*key/i.test(err.message), `Expected issuer mismatch error, got: ${err.message}`);
         }
+    });
+
+    it('attestation should pass validateTrustChain if issuer is trusted directly', async function() {
+        // Should decode cleanly
+        // Should validate cryptographically
+        let all_tokens = [ attestationToken ];
+        let trustedIssuers = {};
+        trustedIssuers[issuerIdentity.urn] = [ 'email-confirmation' ];
+        const result = await validateTrustChain(all_tokens, attestationToken, trustedIssuers, 'email-confirmation');
+        assert.strictEqual(result.valid, true);
+        assert.strictEqual(result.subjectToken.decoded.kind, 'vch:attest');
+        assert.strictEqual(result.subjectToken.decoded.purpose, 'email-confirmation');
+        assert.strictEqual(result.subjectToken.decoded.email, 'user@example.com');
+        assert.strictEqual(result.subjectToken.decoded.iss, issuerIdentity.urn);
+        assert.strictEqual(result.subjectToken.decoded.sub, result.subjectToken.decoded.jti); // Attestation: sub == jti
     });
 
 
