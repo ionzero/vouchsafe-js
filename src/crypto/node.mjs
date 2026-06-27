@@ -33,10 +33,6 @@ export async function sha256(data) {
     return createHash('sha256').update(data).digest();
 }
 
-export async function sha512(data) {
-    return createHash('sha512').update(data).digest();
-}
-
 export async function getKeyBytes(type, keyDer) {
     let der;
     if (typeof keyDer == 'string') {

@@ -27,10 +27,6 @@ export async function sha256(data) {
     return await crypto.subtle.digest('SHA-256', data);
 }
 
-export async function sha512(data) {
-    return await crypto.subtle.digest('SHA-512', data);
-}
-
 export async function getKeyBytes(type, keyDer) {
     let der;
     if (typeof keyDer == 'string') {

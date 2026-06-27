@@ -182,7 +182,7 @@ function readTokenFile(filename) {
 }
 
 async function loadTrusted(filePath, inlinePairs) {
-  const map = Object.create(null);
+  const map = {};
 
   // 1) From --trusted file (JSON object OR space-separated text)
   if (filePath) {
@@ -215,7 +215,7 @@ async function loadTrusted(filePath, inlinePairs) {
   // 2) From repeated --trusted-issuer <urn:purpose[,purpose2,...]>
   for (const pair of inlinePairs) {
     const s = String(pair);
-    const idx = s.indexOf(':');
+    const idx = s.lastIndexOf(':');
     if (idx === -1) continue;
     const urn = s.slice(0, idx).trim();
     const purp = s.slice(idx + 1).trim();

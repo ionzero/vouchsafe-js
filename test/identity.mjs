@@ -5,6 +5,7 @@ import crypto from 'crypto';
 import {
   Identity,
   createVouchsafeIdentity,
+  verifyUrnMatchesKey,
   validateTrustChain,
 } from '../src/index.mjs';
 
@@ -29,6 +30,22 @@ describe('Identity class', function () {
       assert.ok(id);
       assert.ok(id.urn && typeof id.urn === 'string');
       assert.ok(id.keypair && id.keypair.publicKey && id.keypair.privateKey);
+    });
+
+    it('accepts identity-spec labels and rejects unsupported hash algorithms', async function () {
+      const id = await createVouchsafeIdentity('Alice_+%25');
+      assert.ok(id.urn.startsWith('urn:vouchsafe:Alice_+%25.'));
+      assert.strictEqual(await verifyUrnMatchesKey(id.urn, id.keypair.publicKey), true);
+
+      await assert.rejects(
+        () => createVouchsafeIdentity('alice', 'sha512'),
+        /unsupported hash algorithm/i
+      );
+
+      await assert.rejects(
+        () => createVouchsafeIdentity('ab'),
+        /invalid label/i
+      );
     });
 
     it('Identity.from({urn, keypair}) rehydrates and verifies binding', async function () {

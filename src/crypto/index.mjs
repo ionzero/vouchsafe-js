@@ -33,12 +33,7 @@ export const sha256 = async function(...args) {
     const { sha256 } = await loadImpl();
     return sha256(...args);
 };
-export const sha512 = async function(...args) {
-    const { sha512 } = await loadImpl();
-    return sha512(...args);
-};
 export const getKeyBytes = async function(...args) {
     const { getKeyBytes } = await loadImpl();
     return getKeyBytes(...args);
 };
-

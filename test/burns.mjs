@@ -8,6 +8,7 @@ import {
     revokeVouchToken,
     createRevokeToken,
     createVouchsafeIdentity,
+    validateVouchToken,
     validateTrustChain
 } from '../src/index.mjs';
 
@@ -210,6 +211,18 @@ describe('Identity burn cases', () => {
 
         assert.equal(res.valid, true);
         assert.equal(resAfterBurn.valid, false);
+    });
+
+    it('rejects burn tokens that include exp', async function () {
+        const identity = await createVouchsafeIdentity('burner');
+        const token = await createBurnToken(identity.urn, identity.keypair, {
+            exp: Math.floor(Date.now() / 1000) + 3600,
+        });
+
+        await assert.rejects(
+            () => validateVouchToken(token),
+            /exp/i
+        );
     });
 
 });

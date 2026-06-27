@@ -63,6 +63,8 @@ export class Identity {
     }
     return new Identity(init);
   }
+  // JAYK: TODO: Consider adding a 'get_label()' or 'for_display()' 
+  // to make it easier to display a urn
 
   static async fromKeypair(label, keypair) {
     const { urn, keypair: kp } = await createVouchsafeIdentityFromKeypair(label, keypair);

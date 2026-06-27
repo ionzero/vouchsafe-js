@@ -2,27 +2,28 @@
 import { decodeJwt } from 'jose';
 import { createJwt, verifyJwt } from './jwt.mjs';
 import { isValidUUID, toBase64 } from './utils.mjs';
-import { sha256, sha512 } from './crypto/index.mjs';
+import { sha256 } from './crypto/index.mjs';
 import { verifyUrnMatchesKey, validateIssuerString } from './urn.mjs';
 
 export async function hashJwt(jwt, alg = 'sha256') {
+    if (alg !== 'sha256') {
+        throw new Error(`Unsupported hash algorithm: ${alg}`);
+    }
     const data = new TextEncoder().encode(jwt);
-    const digestFn = alg === 'sha512' ? sha512 : sha256;
+    const digestFn = sha256;
 
     return digestFn(data).then(bytes => {
         const hex = Array.from(new Uint8Array(bytes))
             .map(b => b.toString(16).padStart(2, '0'))
             .join('');
 
-        if (alg == 'sha256') {
-            return hex;
-        } else {
-            return `${hex}.${alg}`;
-        }
+        return hex;
     });
 }
 
 const VOUCH_KINDS=['vch:attest', 'vch:vouch', 'vch:revoke', 'vch:burn' ];
+const VCH_SUM_RE = /^[0-9a-f]{64}$/;
+const PURPOSE_RE = /^[a-z0-9\-_:\s]+$/;
 
 function isValidKind(kind) {
     return VOUCH_KINDS.includes(kind);
@@ -34,10 +35,13 @@ export async function createVouchToken(subjectJwt, issuer, issuerKeyPair, args =
         publicKey,
         privateKey
     } = issuerKeyPair;
-    const subject = decodeJwt(subjectJwt);
+    const subject = await validateVouchToken(subjectJwt);
     //  console.log("XXXX", subject);
 
     if (!subject.iss || !subject.jti) throw new Error("Subject JWT must include iss and jti");
+    if (subject.kind !== 'vch:attest' && subject.kind !== 'vch:vouch') {
+        throw new Error("Vouch tokens may only reference Vouchsafe attestations or vouches");
+    }
 
     const vch_sum = await hashJwt(subjectJwt);
 
@@ -155,6 +159,7 @@ export async function validateVouchToken(token) {
     if (!decoded.iss_key) throw new Error('Missing required iss_key in Vouchsafe token');
     if (!decoded.jti || !isValidUUID(decoded.jti)) throw new Error('Missing or invalid jti');
     if (!decoded.sub || typeof decoded.sub !== 'string') throw new Error('Missing or invalid sub');
+    if (typeof decoded.iat !== 'number') throw new Error('Missing or invalid iat');
     if (!validateIssuerString(decoded.iss)) {
         throw new Error('Invalid token: Iss does not contain a valid Vouchsafe ID');
     }
@@ -178,6 +183,9 @@ export async function validateVouchToken(token) {
         if (typeof decoded.burns != 'undefined') {
             throw new Error('Attestations may not have burns');
         }
+        if (typeof decoded.purpose != 'undefined' && (typeof decoded.purpose !== 'string' || !PURPOSE_RE.test(decoded.purpose))) {
+            throw new Error('Attestation purpose must be a valid string');
+        }
     } else if (decoded.kind == 'vch:vouch') {
         // burn token. Let's check the rules.
         if (typeof decoded.vch_iss == 'undefined') {
@@ -192,7 +200,7 @@ export async function validateVouchToken(token) {
         if (typeof decoded.purpose != 'undefined' && typeof decoded.purpose != 'string') {
             throw new Error('Vouch token purpose must be a valid string ');
         }
-        if (typeof decoded.purpose == 'string' && !/[a-z0-9\-_:\s]/.test(decoded.purpose)) {
+        if (typeof decoded.purpose == 'string' && !PURPOSE_RE.test(decoded.purpose)) {
             throw new Error("Vouch token purpose may only contain the characters a-z, 0-9, '-', '_' and ':'");
         }
     } else if (decoded.kind == 'vch:burn') {
@@ -203,8 +211,14 @@ export async function validateVouchToken(token) {
         if (typeof decoded.vch_sum != 'undefined') {
             throw new Error('Burn tokens may not have a vch_sum');
         }
+        if (typeof decoded.vch_iss != 'undefined') {
+            throw new Error('Burn tokens may not have a vch_iss');
+        }
         if (typeof decoded.revokes != 'undefined') {
             throw new Error('Burn tokens may not have revokes');
+        }
+        if (typeof decoded.exp != 'undefined') {
+            throw new Error('Burn tokens may not have exp');
         }
         // burns can only reference the signing issuer.
         if (decoded.burns != decoded.iss) {
@@ -219,7 +233,7 @@ export async function validateVouchToken(token) {
             throw new Error('Invalid vch_iss');
         }
         // all other token types must have a vch_sum
-        if (!decoded.vch_sum || !/^[A-Za-z0-9+/=]+(\.sha256|\.sha512)?$/.test(decoded.vch_sum)) {
+        if (!decoded.vch_sum || !VCH_SUM_RE.test(decoded.vch_sum)) {
             throw new Error('Invalid or missing vch_sum');
         }
         // if revokes is present, it's a revoke token. 

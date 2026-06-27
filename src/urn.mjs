@@ -1,21 +1,18 @@
-import { getKeyBytes, generateKeyPair, sha256, sha512 } from './crypto/index.mjs';
+import { getKeyBytes, generateKeyPair, sha256 } from './crypto/index.mjs';
 import { VOUCHSAFE_SPEC_VERSION } from './version.mjs';
 import { base32Decode, base32Encode, toBase64, fromBase64 } from './utils.mjs';
 
-const SUPPORTED_HASHES = {
-    sha256,
-    sha512,
-};
+const SUPPORTED_HASHES = { sha256 };
 
 /**
  * Create a new Vouchsafe identity
- * @param {string} label - Required, lowercase a-z0-9 and hyphen
- * @param {string} hashAlg - Optional: 'sha256' (default) or 'sha512'
+ * @param {string} label - Required, 3-32 chars, a-zA-Z0-9-_+%
+ * @param {string} hashAlg - Optional: 'sha256' (default)
  * @returns {Promise<{ urn, publicKey, privateKey, publicKeyHash }>}
  */
 export async function createVouchsafeIdentity(label, hashAlg = 'sha256') {
-    if (!label || typeof label !== 'string' || !/^[a-zA-Z0-9\-_%\+]{1,32}$/.test(label)) {
-        throw new Error("Invalid label. Must be lowercase, 1–32 chars, letters/numbers/hyphens only.");
+    if (!label || typeof label !== 'string' || !/^[a-zA-Z0-9\-_%\+]{3,32}$/.test(label)) {
+        throw new Error("Invalid label. Must be 3-32 characters (a-z, A-Z, 0-9, -, _, %, +).");
     }
 
     const hashFn = SUPPORTED_HASHES[hashAlg];
@@ -33,7 +30,7 @@ export async function createVouchsafeIdentity(label, hashAlg = 'sha256') {
     const hash = new Uint8Array(await hashFn(pubBytes));
     const hashB32 = base32Encode(hash).toLowerCase();
 
-    const urn = `urn:vouchsafe:${label}.${hashB32}` + (hashAlg !== 'sha256' ? `.${hashAlg}` : '');
+    const urn = `urn:vouchsafe:${label}.${hashB32}`;
 
     return {
         urn,
@@ -53,17 +50,15 @@ export async function createVouchsafeIdentity(label, hashAlg = 'sha256') {
  * @returns {Promise<boolean>}
  */
 export async function verifyUrnMatchesKey(urn, publicKeyBase64) {
-    const match = urn.match(/^urn:vouchsafe:([a-zA-Z0-9\-_%\+]+)\.([a-z2-7]{52})(?:\.(sha256|sha512))?$/);
+    const match = urn.match(/^urn:vouchsafe:([a-zA-Z0-9\-_%\+]{3,32})\.([a-z2-7]{52})$/);
     if (!match) return false;
 
-    const [, , expectedHash, hashAlg = 'sha256'] = match;
-    const hashFn = SUPPORTED_HASHES[hashAlg];
-    if (!hashFn) return false;
+    const [, , expectedHash] = match;
 
     const rawPubKey = await getKeyBytes('public', publicKeyBase64);
 
     const pubBytes = new Uint8Array(rawPubKey);
-    const hash = new Uint8Array(await hashFn(pubBytes));
+    const hash = new Uint8Array(await sha256(pubBytes));
     const actualB32 = base32Encode(hash).toLowerCase();
 
     return actualB32 === expectedHash;
@@ -74,12 +69,12 @@ export async function verifyUrnMatchesKey(urn, publicKeyBase64) {
  * Create a Vouchsafe identity from an existing DER-based Ed25519 keypair
  * @param {string} label - human-readable label (3–32 chars, a-zA-Z0-9-_+%)
  * @param {{ publicKey: string, privateKey: string }} keypair - base64-encoded DER keys
- * @param {string} hashAlg - 'sha256' (default) or 'sha512'
+ * @param {string} hashAlg - 'sha256' (default)
  * @returns {Promise<{ urn, keypair, publicKeyHash, version }>}
  */
 export async function createVouchsafeIdentityFromKeypair(label, keypair, hashAlg = 'sha256') {
     if (!label || typeof label !== 'string' || !/^[a-zA-Z0-9\-_%\+]{3,32}$/.test(label)) {
-        throw new Error("Invalid label. Must be 1–32 characters (a–z, 0–9, -, _, %, +).");
+        throw new Error("Invalid label. Must be 3-32 characters (a-z, A-Z, 0-9, -, _, %, +).");
     }
 
     const hashFn = SUPPORTED_HASHES[hashAlg];
@@ -104,7 +99,7 @@ export async function createVouchsafeIdentityFromKeypair(label, keypair, hashAlg
       const hashB32 = base32Encode(hash).toLowerCase();
     */
 
-    const urn = `urn:vouchsafe:${label}.${hashB32}` + (hashAlg !== 'sha256' ? `.${hashAlg}` : '');
+    const urn = `urn:vouchsafe:${label}.${hashB32}`;
 
     return {
         urn,
@@ -133,24 +128,15 @@ export function validateIssuerString(iss) {
     const label = rest.slice(0, dot);
     const afterLabel = rest.slice(dot + 1);
 
-    // --- Optional .sha256 suffix ---
-    let hashPart = afterLabel;
-    let suffix = null;
-
-    const secondDot = afterLabel.indexOf(".");
-    if (secondDot !== -1) {
-        hashPart = afterLabel.slice(0, secondDot);
-        suffix = afterLabel.slice(secondDot + 1);
-
-        if (suffix !== "sha256") return false;
-    }
+    if (afterLabel.includes(".")) return false;
+    const hashPart = afterLabel;
 
     // --- Label validation ---
     if (label.length < 3 || label.length > 32) return false;
     if (!/^[A-Za-z0-9_\-%+]+$/.test(label)) return false;
 
     // --- Hash validation ---
-    if (!/^[a-z2-7]+$/.test(hashPart)) return false;
+    if (!/^[a-z2-7]{52}$/.test(hashPart)) return false;
 
     // Base32 decode must succeed
     let decoded;

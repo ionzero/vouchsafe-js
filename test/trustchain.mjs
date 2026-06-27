@@ -3,6 +3,7 @@ import { strict as assert } from "assert";
 
 import {
     validateVouchToken,
+    createJwt,
     createVouchsafeIdentity,
     createAttestation,
     createVouchToken,
@@ -10,6 +11,11 @@ import {
     decodeToken,
     validateTrustChain
 } from "../src/index.mjs";
+
+function decodeJwt(token) {
+    const [, payload] = token.split('.');
+    return JSON.parse(Buffer.from(payload, 'base64url').toString());
+}
 
 
 // Helper: create vouch A → B
@@ -124,6 +130,58 @@ describe("Vouchsafe evaluator - fresh-minted identities each test", function () 
 
         assert.equal(res.valid, true);
         assert.deepEqual(res.effectivePurposes, ["msg-signing"]);
+    });
+
+    it('rejects trust chains that rely on a vouch with mismatched vch_sum', async function () {
+        const leaf = await createVouchsafeIdentity('leaf');
+        const root = await createVouchsafeIdentity('root');
+        const purpose = 'msg-signing';
+
+        const leafToken = await createAttestation(leaf.urn, leaf.keypair, { purpose });
+        const leafPayload = decodeJwt(leafToken);
+
+        const forgedVouch = await createJwt(
+            root.urn,
+            root.keypair.publicKey,
+            root.keypair.privateKey,
+            {
+                kind: 'vch:vouch',
+                jti: crypto.randomUUID(),
+                sub: leafPayload.jti,
+                vch_iss: leafPayload.iss,
+                vch_sum: '0'.repeat(64),
+                purpose,
+            }
+        );
+
+        const result = await validateTrustChain(
+            [leafToken, forgedVouch],
+            leafToken,
+            { [root.urn]: [purpose] },
+            [purpose]
+        );
+
+        assert.strictEqual(result.valid, false);
+    });
+
+    it('refuses to create a vouch for a JWT that is not a Vouchsafe token', async function () {
+        const externalIssuer = await createVouchsafeIdentity('ext');
+        const voucher = await createVouchsafeIdentity('root');
+        const externalJwt = await createJwt(
+            externalIssuer.urn,
+            externalIssuer.keypair.publicKey,
+            externalIssuer.keypair.privateKey,
+            {
+                jti: crypto.randomUUID(),
+                sub: 'external-subject',
+                iat: Math.floor(Date.now() / 1000),
+            }
+        );
+
+        await assert.rejects(
+            () => createVouchToken(externalJwt, voucher.urn, voucher.keypair, { purpose: 'msg-signing' }),
+            /vouchsafe|kind/i
+        );
     });
 
 
@@ -477,4 +535,3 @@ describe("Vouchsafe evaluator - fresh-minted identities each test", function () 
     });
 
 });
-

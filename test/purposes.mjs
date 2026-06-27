@@ -64,4 +64,20 @@ describe('validateTrustChain() with purpose narrowing', function() {
 
         assert.strictEqual(result.valid, false);
     });
+
+    it('treats omitted purpose as unconstrained for directly trusted tokens', async function () {
+        const root = await createVouchsafeIdentity('root');
+        const purpose = 'msg-signing';
+        const token = await createAttestation(root.urn, root.keypair, {});
+
+        const result = await validateTrustChain(
+            [token],
+            token,
+            { [root.urn]: [purpose] },
+            [purpose]
+        );
+
+        assert.strictEqual(result.valid, true);
+        assert.deepStrictEqual(result.effectivePurposes, [purpose]);
+    });
 });

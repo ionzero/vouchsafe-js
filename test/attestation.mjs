@@ -99,5 +99,27 @@ describe('createAttestation()', function() {
         }
     });
 
+    it('should reject Vouchsafe tokens that omit iat', async function () {
+        const identity = await createVouchsafeIdentity('issuer');
+        const token = await createAttestation(identity.urn, identity.keypair, { iat: null });
+
+        await assert.rejects(
+            () => validateVouchToken(token),
+            /iat/i
+        );
+    });
+
+    it('should reject invalid purpose syntax on attestations', async function () {
+        const identity = await createVouchsafeIdentity('issuer');
+        const token = await createAttestation(identity.urn, identity.keypair, {
+            purpose: 'msg-signing!',
+        });
+
+        await assert.rejects(
+            () => validateVouchToken(token),
+            /purpose/i
+        );
+    });
+
 
 });
