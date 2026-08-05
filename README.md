@@ -225,6 +225,55 @@ console.log('Webhook data:', appClaims);
 
 ---
 
+## Token Delivery and Trust Material
+
+Vouchsafe makes trust decisions using only the tokens provided and your local
+configuration. No external service or state is required beyond the token set
+being evaluated. This is what makes local, deterministic verification possible.
+Vouchsafe validates cryptographic statements, not transport mechanisms: it
+doesn't require any particular API, header format, database, message bus, or
+identity provider to deliver tokens. You decide how to obtain tokens and which
+trust material to keep available, based on what your application needs.
+
+For trust-chain evaluation, provide the subject token, the related tokens you
+have available, and your local trusted-issuer policy. That token set can be
+assembled from more than one source:
+
+* tokens presented by the actor in a request, webhook, or message;
+* tokens bundled alongside the subject token;
+* tokens your application has cached or synchronized previously;
+* revocation and burn tokens from an application-managed revocation feed; and
+* tokens supplied through an offline import, QR code, file, or any other
+  application-specific channel.
+
+For example, an application may merge caller-provided tokens with its own
+revocation corpus before validation:
+
+```js
+const presentedTokens = request.body.tokens;
+const revocationTokens = await loadLocalRevocationTokens();
+const tokens = [...presentedTokens, ...revocationTokens];
+
+const result = await validateTrustChain(
+    tokens,
+    request.body.subjectToken,
+    trustedIssuers,
+    requiredPurposes
+);
+```
+
+The delivery model does not dilute Vouchsafe's security properties. Every token
+is still validated for its signature, issuer-to-key binding, token structure,
+and role in the trust graph; local policy still decides which issuers and
+purposes are trusted. Because Vouchsafe has no infrastructure dependency, the
+application is free, in a way most authorization systems don't allow, to choose
+the delivery model that fits its own constraints. A high-stakes financial
+system might use high-availability infrastructure or a blockchain ledger, while
+a simple chat app might rely on opportunistic sync over BLE (Bluetooth Low
+Energy) or even printed QR codes. The choice is yours.
+
+---
+
 ## What Vouchsafe Tokens Can Represent
 
 Vouchsafe tokens come in a few simple types that can be combined
@@ -550,6 +599,8 @@ async function validateTrustChain(
 ```
 
 * `tokens` - array of all tokens you have available (including the subject).
+  This can combine actor-provided tokens with locally managed material such as
+  revocation and burn feeds.
 * `subjectToken` - the token you are evaluating for trust.
 * `trustedIssuers` - map of URN array of purposes that URN is trusted for.
 * `requiredPurposes` - array of purposes you require (`['msg-signing']`, etc.);
@@ -588,7 +639,7 @@ The npm package also provides CLI utilities that let you work with identities
 and tokens entirely from the shell:
 
 * **`create_vouchsafe_id`** - generate a new Vouchsafe identity (URN + keypair).
-* **`create_vouchsafe_token`** - mint attestations, vouches, revocations, and burns.
+* **`create_vouchsafe_token`** - mint attestations, vouches, and revocations.
 * **`verify_vouchsafe_token`** - validate and trust-check tokens, including multi-hop chains.
 
 They are ideal for scripting, prototyping, automation, or bootstrapping
@@ -643,7 +694,6 @@ Token types:
   --attest   (default)  Issue an attestation
   --vouch              Vouch for an existing token
   --revoke             Revoke a previous vouch
-  --burn               Burn an identity
 
 Key options:
   -i, --identity <file>    Identity JSON (required)
@@ -651,8 +701,8 @@ Key options:
   -c, --claim <k=v>        Additional claim (repeatable)
   -p, --purpose <purpose>  Purpose (repeatable; attest/vouch)
   -e, --expires <seconds>  Expiration (default 86400; 0 = no exp)
-  -t, --token-file <file>  Subject token (vouch/revoke/burn)
-  -T, --token <string>     Subject token string (vouch/revoke/burn)
+  -t, --token-file <file>  Subject token (vouch/revoke)
+  -T, --token <string>     Subject token string (vouch/revoke)
 ```
 
 Examples:

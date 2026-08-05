@@ -5,7 +5,8 @@ export {
 export {
     createVouchsafeIdentity,
     verifyUrnMatchesKey,
-    createVouchsafeIdentityFromKeypair
+    createVouchsafeIdentityFromKeypair,
+    validateIssuerString
 } from './urn.mjs';
 
 export {
@@ -23,6 +24,7 @@ export {
     createBurnToken,
     validateVouchToken,
     verifyVouchToken,
+    hashJwt,
     isBurnToken, 
     isRevocationToken, 
 } from './vouch.mjs';
@@ -41,4 +43,3 @@ export {
 } from './legacy.mjs'; 
 
 export { Identity } from './Identity.mjs';
-

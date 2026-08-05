@@ -55,7 +55,9 @@
   "scripts": {
     "build": "rollup -c",
     "prepublishOnly": "npm run build",
-    "test": "cd test ; mocha ."
+    "test": "cd test ; mocha .",
+    "interop:generate": "node scripts/generate-interop-assets.mjs",
+    "interop:validate": "node scripts/validate-interop-assets.mjs"
   },
   "bin": {
     "create_vouchsafe_id": "./src/bin/create_vouchsafe_id.mjs",

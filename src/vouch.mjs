@@ -239,6 +239,7 @@ export async function validateVouchToken(token) {
         // if revokes is present, it's a revoke token. 
         // revoke tokens can't have a purpose claim
         if (typeof decoded.purpose != 'undefined') throw new Error('Vouch token may not have both revokes and purpose');
+        if (typeof decoded.exp != 'undefined') throw new Error('Revocation tokens must not include exp');
         if (decoded.revokes !== 'all' && !isValidUUID(decoded.revokes)) {
             throw new Error('revokes field must be "all" or a UUID');
         }
