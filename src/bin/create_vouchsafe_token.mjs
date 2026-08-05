@@ -96,7 +96,12 @@ function writeOut(pathOrStdout, data) {
     if (!data.endsWith('\n')) process.stdout.write('\n');
     return;
   }
-  fs.writeFileSync(pathOrStdout, data + (data.endsWith('\n') ? '' : '\n'), 'utf8');
+  fs.writeFileSync(pathOrStdout, data + (data.endsWith('\n') ? '' : '\n'), {
+    encoding: 'utf8',
+    mode: 0o600,
+  });
+  // mode only affects new files; tighten permissions when overwriting too.
+  fs.chmodSync(pathOrStdout, 0o600);
 }
 
 function toSeconds(val, def = 86400) {

@@ -496,6 +496,30 @@ describe("Vouchsafe evaluator - fresh-minted identities each test", function () 
         assert.equal(res.valid, false);
     });
 
+    it("rejects token sets larger than the default limit", async function () {
+        const oversizedTokens = [
+            ...tokens,
+            ...Array(294).fill(leafAttest)
+        ];
+
+        const rejected = await validateTrustChain(
+            oversizedTokens,
+            leafAttest,
+            trustedIssuers,
+            ["msg-signing"]
+        );
+        assert.equal(rejected.valid, false);
+
+        const unlimited = await validateTrustChain(
+            oversizedTokens,
+            leafAttest,
+            trustedIssuers,
+            ["msg-signing"],
+            { maxTokens: Infinity, maxDepth: Infinity }
+        );
+        assert.equal(unlimited.valid, true);
+    });
+
 
     // ============================================================
     // 7. Returning all valid chains

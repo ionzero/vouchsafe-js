@@ -1,6 +1,9 @@
 import { verifyJwt, decodeJwt } from './jwt.mjs';
 import { validateVouchToken, verifyVouchToken, hashJwt, isBurnToken, isRevocationToken } from './vouch.mjs';
 
+const DEFAULT_MAX_TOKENS = 300;
+const DEFAULT_MAX_DEPTH = 300;
+
 // this just gives us a stable identifier for lookup.
 // we use it in a lot of places, so this gives us
 // a consistent formulation of the lookup string.
@@ -342,7 +345,7 @@ function vouchsafeEvaluate(trustGraph, startToken, trustedIssuers, requiredPurpo
         options.returnAllValidChains = false;
     }
     if (typeof options.maxDepth === "undefined") {
-        options.maxDepth = undefined;  // no limit
+        options.maxDepth = DEFAULT_MAX_DEPTH;
     }
 
     // ============================================================
@@ -376,8 +379,8 @@ function vouchsafeEvaluate(trustGraph, startToken, trustedIssuers, requiredPurpo
     // ============================================================
     // BFS LOOP
     // ============================================================
-    while (queue.length > 0) {
-        const frame = queue.shift();
+    for (let queueIndex = 0; queueIndex < queue.length; queueIndex++) {
+        const frame = queue[queueIndex];
 
         const currentToken    = frame.token;
         const currentDecoded  = currentToken.decoded;
@@ -609,7 +612,9 @@ function vouchsafeEvaluate(trustGraph, startToken, trustedIssuers, requiredPurpo
 //                     e.g. { "urn:vouchsafe:root.ab...": ["msg-signing", ...] }
 //   purposes        : Optional array of purposes to filter final output
 //   options         : evaluator behavior controls:
-//      maxDepth     : Optional integer limiting chain depth
+//      maxTokens    : Maximum input tokens (default: 300)
+//      maxDepth     : Maximum vouch hops (default: 300)
+//                    Set either limit to Infinity only for trusted inputs.
 //
 // Returns:
 //   {
@@ -621,11 +626,28 @@ function vouchsafeEvaluate(trustGraph, startToken, trustedIssuers, requiredPurpo
 // ---------------------------------------------------------------------------
 
 export async function validateTrustChain(tokens, givenStartToken, trustedIssuers, purposes, options = {}) {
-
+    const maxTokens = options.maxTokens ?? DEFAULT_MAX_TOKENS;
+    if (maxTokens !== Infinity && (!Number.isSafeInteger(maxTokens) || maxTokens < 1)) {
+        throw new Error('maxTokens must be a positive integer or Infinity');
+    }
+    if (options.maxDepth !== undefined && options.maxDepth !== Infinity &&
+        (!Number.isSafeInteger(options.maxDepth) || options.maxDepth < 0)) {
+        throw new Error('maxDepth must be a non-negative integer or Infinity');
+    }
+    if (!Array.isArray(tokens)) {
+        throw new TypeError('tokens must be an array');
+    }
 
     // our Token set must include the start token so the graph can be built.
     // if start token is already present → safe to use as-is - otherwise copy + append
     const tokenSet = tokens.includes(givenStartToken) ? tokens : [...tokens, givenStartToken];
+    if (tokenSet.length > maxTokens) {
+        return {
+            valid: false,
+            chains: [],
+            effectivePurposes: []
+        };
+    }
 
     // -----------------------------------------------------------------------
     // Step 1:

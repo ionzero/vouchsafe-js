@@ -59,4 +59,26 @@ describe('Vouchsafe CLI tools', function () {
 
         assert.match(stdout, /^[^.]+\.[^.]+\.[^.]+\n$/);
     });
+
+    it('creates private-key and token output files with owner-only permissions', async function () {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vouchsafe-permissions-'));
+        const identityPath = path.join(dir, 'identity.json');
+        const tokenPath = path.join(dir, 'token.jwt');
+
+        await execFileAsync(process.execPath, [
+            path.join(packageRoot, 'src/bin/create_vouchsafe_id.mjs'),
+            '--label', 'owner-only',
+            '--output', identityPath,
+        ], { cwd: packageRoot });
+
+        await execFileAsync(process.execPath, [
+            path.join(packageRoot, 'src/bin/create_vouchsafe_token.mjs'),
+            '--identity', identityPath,
+            '--purpose', 'msg-signing',
+            '--output', tokenPath,
+        ], { cwd: packageRoot });
+
+        assert.equal(fs.statSync(identityPath).mode & 0o777, 0o600);
+        assert.equal(fs.statSync(tokenPath).mode & 0o777, 0o600);
+    });
 });

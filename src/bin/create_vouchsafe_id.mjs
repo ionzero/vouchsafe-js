@@ -59,19 +59,24 @@ function readPemFile(filename) {
     return contents.replace(/^-----BEGIN .*?-----\n|\n-----END .*?-----\n?/g, '').replace(/\n/g, '');
 }
 
-function writeFile(path_or_handle, data, encoding) {
-    let out = path_or_handle;
-    let type = 'handle';
-    if (typeof path_or_handle == 'string') {
-        out = fs.createWriteStream(path_or_handle, {
-            encoding
+async function writeFile(path_or_handle, data, encoding) {
+    if (typeof path_or_handle !== 'string') {
+        path_or_handle.write(data);
+        return;
+    }
+
+    await new Promise((resolve, reject) => {
+        const out = fs.createWriteStream(path_or_handle, {
+            encoding,
+            mode: 0o600
         });
-        type = 'file'
-    }
-    out.write(data);
-    if (type == 'file') {
-        out.end();
-    }
+        out.once('error', reject);
+        out.end(data, () => {
+            // mode only affects new files; tighten permissions when overwriting too.
+            fs.chmodSync(path_or_handle, 0o600);
+            resolve();
+        });
+    });
 }
 
 try {

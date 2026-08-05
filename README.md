@@ -582,6 +582,7 @@ async function validateTrustChain(
     trustedIssuers: { [urn: string]: string[] },
     requiredPurposes?: string[] | null,
     options?: {
+        maxTokens?: number;
         maxDepth?: number;
         returnAllValidChains?: boolean;
     }
@@ -605,8 +606,13 @@ async function validateTrustChain(
 * `trustedIssuers` - map of URN array of purposes that URN is trusted for.
 * `requiredPurposes` - array of purposes you require (`['msg-signing']`, etc.);
   if omitted or empty, the evaluator treats this as "S_ANY" (any purpose that survives is acceptable).
-* `options.maxDepth` - optional bound on how many vouch hops the evaluator is allowed to follow.
+* `options.maxTokens` - maximum number of input tokens accepted for one evaluation. Defaults to `300`.
+* `options.maxDepth` - maximum number of vouch hops the evaluator follows. Defaults to `300`.
 * `options.returnAllValidChains` - if `true`, the evaluator will return all valid chains instead of stopping at the first one that satisfies the required purposes.
+
+Set `maxTokens` or `maxDepth` to `Infinity` only when all input is trusted and
+resource usage is controlled externally. Unlimited values can allow memory
+exhaustion or denial of service when tokens come from an untrusted caller.
 
 **Result fields (conceptual):**
 
@@ -660,7 +666,7 @@ Example output:
   "urn": "urn:vouchsafe:alice.tp5yr5uvfgbmwba3jdmqrar4rqu5rsbkz6nqqyuw75zxpdzgvhsq",
   "keypair": {
     "publicKey": "MCowBQYDK2VwAyEAo47M4fApUZQV3KwI6Y2kLEFxpX/3M1OqZNGIZwXxKdQ=",
-    "privateKey": "MC4CAQAwBQYDK2VwBCIEIG/9DEl2+cTWQFW+oZvqxd8pOP21u/MIYe5maaFEtyvi"
+    "privateKey": "<base64-encoded PKCS#8 private key>"
   },
   "publicKeyHash": "tp5yr5uvfgbmwba3jdmqrar4rqu5rsbkz6nqqyuw75zxpdzgvhsq",
   "version": "1.5.0"
