@@ -41,7 +41,7 @@ async function prepareTclean(rawTokens, trustedIssuers) {
             continue;
         }
 
-        if (trustedIssuers.hasOwnProperty(current_token.decoded.iss)) {
+        if (Object.prototype.hasOwnProperty.call(trustedIssuers, current_token.decoded.iss)) {
             foundTrustedIssuerToken = true;
         }
 
@@ -397,19 +397,25 @@ function vouchsafeEvaluate(trustGraph, startToken, trustedIssuers, requiredPurpo
         // ========================================================
         // TRUST ROOT CHECK
         // ========================================================
-        if (trustedIssuers.hasOwnProperty(currentIssuer)) {
+        if (Object.prototype.hasOwnProperty.call(trustedIssuers, currentIssuer)) {
 
             const allowedRootPurposes = new Set(trustedIssuers[currentIssuer]);
             const effectivePurposes = new Set();
 
-            // Determine which purposes survive at the trust root
-            const iter = currentPurposes.set.values();
-            while (true) {
-                const next = iter.next();
-                if (next.done) break;
-                const p = next.value;
-                if (allowedRootPurposes.has(p)) {
+            if (currentPurposes.mode === "any") {
+                for (const p of allowedRootPurposes) {
                     effectivePurposes.add(p);
+                }
+            } else if (currentPurposes.mode === "set") {
+                // Determine which purposes survive at the trust root
+                const iter = currentPurposes.set.values();
+                while (true) {
+                    const next = iter.next();
+                    if (next.done) break;
+                    const p = next.value;
+                    if (allowedRootPurposes.has(p)) {
+                        effectivePurposes.add(p);
+                    }
                 }
             }
 
@@ -502,6 +508,10 @@ function vouchsafeEvaluate(trustGraph, startToken, trustedIssuers, requiredPurpo
 
             // Only vouch tokens propagate upward
             if (parentDecoded.kind !== "vch:vouch") {
+                continue;
+            }
+
+            if (parentDecoded.vch_iss !== currentDecoded.iss || parentDecoded.sub !== currentDecoded.jti || parentDecoded.vch_sum !== currentToken.hash) {
                 continue;
             }
 
@@ -700,4 +710,3 @@ export async function validateTrustChain(tokens, givenStartToken, trustedIssuers
     // -----------------------------------------------------------------------
     return result;
 }
-

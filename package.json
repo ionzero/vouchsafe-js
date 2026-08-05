@@ -64,6 +64,7 @@
   },
   "dependencies": {
     "base32": "^0.0.7",
+    "commander": "^15.0.0",
     "jose": "^6.0.10"
   },
   "devDependencies": {

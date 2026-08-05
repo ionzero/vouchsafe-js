@@ -148,7 +148,7 @@ function resolveAction() {
     claims.iat ??= iat;
 
     const expSeconds = toSeconds(opts.expires, 86400);
-    if (expSeconds > 0) {
+    if (action !== 'revoke' && expSeconds > 0) {
       claims.exp = iat + expSeconds;
     }
 

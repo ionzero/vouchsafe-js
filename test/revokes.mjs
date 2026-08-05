@@ -7,6 +7,7 @@ import {
     revokeVouchToken,
     createRevokeToken,
     createVouchsafeIdentity,
+    validateVouchToken,
     validateTrustChain
 } from '../src/index.mjs';
 
@@ -133,6 +134,25 @@ describe('validateTrustChain() - revocation cases', () => {
         );
 
         assert.strictEqual(resAfterRevoke.valid, false, 'Expected failure after leaf revocation');
+    });
+
+    it('should reject revoke tokens whose vch_sum is not lowercase SHA-256 hex', async function () {
+        const identity = await createVouchsafeIdentity('issuer');
+        const token = await createRevokeToken(
+            {
+                sub: crypto.randomUUID(),
+                vch_iss: identity.urn,
+                vch_sum: 'abc+==',
+                revokes: crypto.randomUUID(),
+            },
+            identity.urn,
+            identity.keypair
+        );
+
+        await assert.rejects(
+            () => validateVouchToken(token),
+            /vch_sum/i
+        );
     });
 
 });
