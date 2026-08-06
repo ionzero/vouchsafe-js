@@ -32,7 +32,7 @@ describe('Vouchsafe CLI tools', function () {
             '-p', purpose,
             '-T', leafToken,
             '-T', rootVouch,
-            '--trusted-issuer', `${root.urn}:${purpose}`,
+            '--trusted-issuer', `${root.urn}=${purpose}`,
         ], { cwd: packageRoot });
 
         assert.strictEqual(stdout, '');

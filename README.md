@@ -739,7 +739,7 @@ Options:
   -E, --extended              Extended verification (require trust for purpose)
   -p, --purpose <purpose>     Purpose(s) to require (repeatable)
   --trusted <file>            Trusted issuers file (JSON or text)
-  --trusted-issuer <issuer:purpose[,purpose2...]>  Inline trusted issuer entry
+  --trusted-issuer <issuer=purpose[,purpose2...]>  Inline trusted issuer entry
 ```
 
 Example:

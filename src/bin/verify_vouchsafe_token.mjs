@@ -27,7 +27,7 @@ program
   .option('-E, --extended', 'Extended verification (require trust for -p purpose)')
   .option('-P, --prefix <prefix>', 'prefix to use with unix output, (default vs_)', 'vs_')
   .option('--trusted <filename>', 'Trusted issuers/purposes file (JSON or plain text)')
-  .option('--trusted-issuer <issuer:purpose[,purpose2...]>', 'Inline trusted issuer:purpose(s) (may be repeated)', collect, [])
+  .option('--trusted-issuer <issuer=purpose[,purpose2...]>', 'Inline trusted issuer=purpose(s) (may be repeated)', collect, [])
   .option('-p, --purpose <purpose>', 'Purpose to evaluate (may be repeated)', collect, [])
   .addHelpText('after', `Examples:
   # Basic validation; exit code 0 if valid
@@ -212,10 +212,10 @@ async function loadTrusted(filePath, inlinePairs) {
     }
   }
 
-  // 2) From repeated --trusted-issuer <urn:purpose[,purpose2,...]>
+  // 2) From repeated --trusted-issuer <urn=purpose[,purpose2,...]>
   for (const pair of inlinePairs) {
     const s = String(pair);
-    const idx = s.lastIndexOf(':');
+    const idx = s.lastIndexOf('=');
     if (idx === -1) continue;
     const urn = s.slice(0, idx).trim();
     const purp = s.slice(idx + 1).trim();
