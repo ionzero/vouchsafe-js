@@ -3,6 +3,7 @@
 import fs from 'fs';
 import { Command } from 'commander';
 import { Identity } from '../index.mjs';
+import { getPassphrase } from './passphrase.mjs';
 
 const program = new Command();
 
@@ -22,6 +23,7 @@ program
       'Outputs the JWT to stdout by default or to a file with -o.\n'
   )
   .option('-i, --identity <file>', 'Path to identity JSON file (required)')
+  .option('--passphrase-file <file>', 'read the identity passphrase from a file')
   .option('-f, --claims <file>', 'Path to claims JSON file')
   .option('-c, --claim <key=value>', 'Additional claim (repeatable)', collectClaims, {})
   .option('-p, --purpose <purpose>', 'Purpose for the token (repeatable)', collectStrings, [])
@@ -132,7 +134,10 @@ function resolveAction() {
 
     // Load identity
     const idJson = JSON.parse(fs.readFileSync(opts.identity, 'utf8'));
-    const identity = await Identity.from(idJson);
+    const passphrase = typeof idJson?.keypair?.encryptedPrivateKey === 'string'
+      ? await getPassphrase({ passphraseFile: opts.passphraseFile, prompt: 'Enter passphrase for identity: ' })
+      : undefined;
+    const identity = await Identity.from(idJson, { passphrase });
 
     // Merge claims: file first, then -c overrides
     const claims = {};

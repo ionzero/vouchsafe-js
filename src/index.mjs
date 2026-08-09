@@ -10,6 +10,12 @@ export {
 } from './urn.mjs';
 
 export {
+    VOUCHSAFE_IDENTITY_FILE_VERSION,
+    loadIdentity,
+    serializeIdentity,
+} from './identity-file.mjs';
+
+export {
     createJwt,
     verifyJwt,
     decodeJwt,

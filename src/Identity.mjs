@@ -4,8 +4,8 @@
 import {
   createVouchsafeIdentity,
   createVouchsafeIdentityFromKeypair,
-  verifyUrnMatchesKey
 } from './urn.mjs';
+import { loadIdentity, serializeIdentity } from './identity-file.mjs';
 
 import { createJwt, verifyJwt } from './jwt.mjs';
 
@@ -37,38 +37,31 @@ export class Identity {
     if (!init || typeof init !== 'object') {
       throw new TypeError('Identity ctor expects { urn, keypair }');
     }
-    const { urn, keypair } = init;
+    const { urn, keypair, publicKeyHash, version } = init;
     if (!urn || !keypair || !keypair.publicKey || !keypair.privateKey) {
       throw new Error('Identity requires a valid { urn, keypair:{ publicKey, privateKey } }');
     }
     this.urn = urn;
     this.keypair = keypair;
+    this.publicKeyHash = publicKeyHash;
+    this.version = version;
   }
 
   // --- factories (async) ---
 
   static async create(label, ...rest) {
     // passthrough any extra args (e.g., hashAlg) as your createVouchsafeIdentity supports
-    const { urn, keypair } = await createVouchsafeIdentity(label, ...rest);
-    return new Identity({ urn, keypair });
+    return new Identity(await createVouchsafeIdentity(label, ...rest));
   }
 
-  static async from(init, { verify = true } = {}) {
-    // Rehydrate from { urn, keypair } and (optionally) verify the binding
-    if (!init || !init.urn || !init.keypair) {
-      throw new Error('Identity.from requires { urn, keypair }');
-    }
-    if (verify) {
-      await verifyUrnMatchesKey(init.urn, init.keypair.publicKey);
-    }
-    return new Identity(init);
+  static async from(init, options = {}) {
+    return new Identity(await loadIdentity(init, options));
   }
   // JAYK: TODO: Consider adding a 'get_label()' or 'for_display()' 
   // to make it easier to display a urn
 
   static async fromKeypair(label, keypair) {
-    const { urn, keypair: kp } = await createVouchsafeIdentityFromKeypair(label, keypair);
-    return new Identity({ urn, keypair: kp });
+    return new Identity(await createVouchsafeIdentityFromKeypair(label, keypair));
   }
 
   // --- token creation ---
@@ -99,7 +92,16 @@ export class Identity {
     return validateVouchToken(token);
   }
   // --- utilities ---
+  async toIdentityFile(options = {}) {
+    return serializeIdentity(this, options);
+  }
+
   toJSON() {
-    return { urn: this.urn, keypair: this.keypair };
+    return {
+      urn: this.urn,
+      keypair: this.keypair,
+      publicKeyHash: this.publicKeyHash,
+      version: this.version,
+    };
   }
 }

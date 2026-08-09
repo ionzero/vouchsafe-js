@@ -65,12 +65,14 @@ describe('Vouchsafe CLI tools', function () {
         const identityPath = path.join(dir, 'identity.json');
         const tokenPath = path.join(dir, 'token.jwt');
 
-        await execFileAsync(process.execPath, [
+        const { stderr } = await execFileAsync(process.execPath, [
             path.join(packageRoot, 'src/bin/create_vouchsafe_id.mjs'),
             '--label', 'owner-only',
+            '--create-unencrypted-identity-file',
             '--output', identityPath,
         ], { cwd: packageRoot });
 
+        assert.match(stderr, /Warning: creating an unencrypted identity file/);
         await execFileAsync(process.execPath, [
             path.join(packageRoot, 'src/bin/create_vouchsafe_token.mjs'),
             '--identity', identityPath,
@@ -80,5 +82,57 @@ describe('Vouchsafe CLI tools', function () {
 
         assert.equal(fs.statSync(identityPath).mode & 0o777, 0o600);
         assert.equal(fs.statSync(tokenPath).mode & 0o777, 0o600);
+    });
+
+    it('creates and loads encrypted identity files using a passphrase file', async function () {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vouchsafe-encrypted-'));
+        const identityPath = path.join(dir, 'identity.json');
+        const tokenPath = path.join(dir, 'token.jwt');
+        const passphrasePath = path.join(dir, 'passphrase');
+        fs.writeFileSync(passphrasePath, 'correct horse battery staple\n', { mode: 0o600 });
+
+        await execFileAsync(process.execPath, [
+            path.join(packageRoot, 'src/bin/create_vouchsafe_id.mjs'),
+            '--label', 'encrypted-cli',
+            '--passphrase-file', passphrasePath,
+            '--output', identityPath,
+        ], { cwd: packageRoot });
+
+        const file = JSON.parse(fs.readFileSync(identityPath, 'utf8'));
+        assert.ok(file.keypair.encryptedPrivateKey);
+        assert.ok(!file.keypair.privateKey);
+
+        const { stdout } = await execFileAsync(process.execPath, [
+            path.join(packageRoot, 'src/bin/create_vouchsafe_token.mjs'),
+            '--identity', identityPath,
+            '--passphrase-file', passphrasePath,
+            '--purpose', 'msg-signing',
+            '--output', tokenPath,
+        ], { cwd: packageRoot });
+
+        assert.strictEqual(stdout, '');
+        assert.match(fs.readFileSync(tokenPath, 'utf8'), /^[^.]+\.[^.]+\.[^.]+\n$/);
+    });
+
+    it('uses VOUCHSAFE_ASKPASS with the SSH_ASKPASS prompt protocol', async function () {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vouchsafe-askpass-'));
+        const identityPath = path.join(dir, 'identity.json');
+        const askpassPath = path.join(dir, 'askpass.mjs');
+        const promptsPath = path.join(dir, 'prompts');
+        fs.writeFileSync(askpassPath, "#!/usr/bin/env node\nimport fs from 'node:fs';\nfs.appendFileSync(process.env.PROMPTS_PATH, process.argv[2] + '\\n');\nprocess.stdout.write('askpass-secret\\n');\n", { mode: 0o700 });
+
+        await execFileAsync(process.execPath, [
+            path.join(packageRoot, 'src/bin/create_vouchsafe_id.mjs'),
+            '--label', 'askpass-cli',
+            '--output', identityPath,
+        ], {
+            cwd: packageRoot,
+            env: { ...process.env, VOUCHSAFE_ASKPASS: askpassPath, PROMPTS_PATH: promptsPath },
+        });
+
+        const prompts = fs.readFileSync(promptsPath, 'utf8').trim().split('\n');
+        assert.strictEqual(prompts.length, 2);
+        assert.match(prompts[0], /Enter passphrase/);
+        assert.match(prompts[1], /same passphrase/i);
     });
 });

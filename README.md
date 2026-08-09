@@ -612,10 +612,10 @@ Example output:
   "urn": "urn:vouchsafe:alice.tp5yr5uvfgbmwba3jdmqrar4rqu5rsbkz6nqqyuw75zxpdzgvhsq",
   "keypair": {
     "publicKey": "MCowBQYDK2VwAyEAo47M4fApUZQV3KwI6Y2kLEFxpX/3M1OqZNGIZwXxKdQ=",
-    "privateKey": "<base64-encoded PKCS#8 private key>"
+    "encryptedPrivateKey": "<base64-encoded encrypted private-key blob>"
   },
   "publicKeyHash": "tp5yr5uvfgbmwba3jdmqrar4rqu5rsbkz6nqqyuw75zxpdzgvhsq",
-  "version": "1.5.0"
+  "version": "1.4.0"
 }
 ```
 
@@ -627,13 +627,22 @@ Usage: create_vouchsafe_id [options]
 Create a new Vouchsafe identity with associated keypair.
 
 Options:
-  -l, --label <label>        Identity label (required)
+  -l, --label <label>        Identity label (required unless --existing is used)
   -s, --separate             Output in separate files instead of JSON
   -q, --quiet                Suppress status output
   -e, --existing <filename>  Load an existing identity file rather than creating from scratch
   -o, --output <filename>    Output filename (or prefix in separate files mode)
+      --passphrase-file <file> Read the passphrase from a file
+      --create-unencrypted-identity-file
+                                Create an unencrypted identity file (unsafe)
   -h, --help                 Display help
 ```
+
+Identity files are encrypted by default. Without `--passphrase-file`, the command
+prompts twice for a passphrase. An empty confirmed passphrase creates an
+unencrypted file and emits a warning. `VOUCHSAFE_ASKPASS` may name an
+SSH_ASKPASS-compatible program: it receives the prompt as its sole argument and
+writes the passphrase to standard output.
 
 ### `create_vouchsafe_token`
 
@@ -649,6 +658,8 @@ Token types:
 
 Key options:
   -i, --identity <file>    Identity JSON (required)
+      --passphrase-file <file>
+                            Read an encrypted identity-file passphrase from a file
   -f, --claims <file>      Claims JSON file
   -c, --claim <k=v>        Additional claim (repeatable)
   -p, --purpose <purpose>  Purpose (repeatable; attest/vouch)
