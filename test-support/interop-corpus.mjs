@@ -39,6 +39,11 @@ function buildTestCase(name, type, assets, expected = {}) {
   return { name, type, assets, expected };
 }
 
+function randomCharacters(alphabet, length) {
+  const characters = Array.from(alphabet);
+  return Array.from({ length }, () => characters[crypto.randomInt(characters.length)]).join('');
+}
+
 export async function createInteropAssetDirectory(outputDir) {
   if (outputDir) {
     const resolved = path.resolve(outputDir);
@@ -69,6 +74,10 @@ export async function writeInteropCorpus(outputDir, producer = 'js') {
   const intermediate = await Identity.create('intermediate');
   const root = await Identity.create('root');
   const external = await Identity.create('external');
+  const protectedAsciiIdentity = await Identity.create('protected-ascii');
+  const protectedUtf8Identity = await Identity.create('protected-utf8');
+  const protectedAsciiPassphrase = randomCharacters('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()-_=+', 32);
+  const protectedUtf8Passphrase = `vouchsafe-${randomCharacters('aeiou', 8)}-${randomCharacters(['é', 'ø', '漢', '字', '🔐', '🗝️', 'कुंजी'], 8)}`;
 
   const validPurpose = 'msg-signing';
   const broadPurpose = 'file-storage msg-signing';
@@ -130,6 +139,8 @@ export async function writeInteropCorpus(outputDir, producer = 'js') {
     intermediate: intermediate.toJSON(),
     root: root.toJSON(),
     external: external.toJSON(),
+    protectedAscii: await protectedAsciiIdentity.toIdentityFile({ passphrase: protectedAsciiPassphrase }),
+    protectedUtf8: await protectedUtf8Identity.toIdentityFile({ passphrase: protectedUtf8Passphrase }),
   };
 
   const identityPaths = {};
@@ -196,6 +207,16 @@ export async function writeInteropCorpus(outputDir, producer = 'js') {
     test_cases: [
       buildTestCase('identity_leaf_roundtrip', 'identity_roundtrip', {
         identity: identityPaths.leaf,
+      }),
+      buildTestCase('identity_protected_ascii_roundtrip', 'identity_encrypted_roundtrip', {
+        identity: identityPaths.protectedAscii,
+      }, {
+        passphrase: protectedAsciiPassphrase,
+      }),
+      buildTestCase('identity_protected_utf8_roundtrip', 'identity_encrypted_roundtrip', {
+        identity: identityPaths.protectedUtf8,
+      }, {
+        passphrase: protectedUtf8Passphrase,
       }),
       buildTestCase('attestation_leaf_valid', 'token_validate', {
         token: tokenPaths.leafAttestation,

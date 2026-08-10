@@ -1,4 +1,5 @@
 import fs from 'fs';
+import assert from 'assert';
 import os from 'os';
 import path from 'path';
 
@@ -15,7 +16,14 @@ describe('Runtime interoperability corpus', function () {
 
   it('generates and validates a JS-produced asset corpus locally', async function () {
     const dir = makeTempDir('vouchsafe-js-interop-');
-    await writeInteropCorpus(dir, 'js');
+    const { manifest } = await writeInteropCorpus(dir, 'js');
+    const protectedCases = manifest.test_cases.filter(testCase => testCase.type === 'identity_encrypted_roundtrip');
+    assert.strictEqual(protectedCases.length, 2);
+    for (const protectedCase of protectedCases) {
+      const protectedIdentity = JSON.parse(fs.readFileSync(path.join(dir, protectedCase.assets.identity), 'utf8'));
+      assert.ok(protectedIdentity.keypair.encryptedPrivateKey);
+      assert.ok(!protectedIdentity.keypair.privateKey);
+    }
     await validateInteropAssets(dir);
   });
 });

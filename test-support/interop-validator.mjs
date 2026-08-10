@@ -33,6 +33,16 @@ async function runIdentityRoundtrip(rootDir, testCase) {
   assert.strictEqual(await verifyUrnMatchesKey(identityData.urn, identityData.keypair.publicKey), true);
 }
 
+async function runEncryptedIdentityRoundtrip(rootDir, testCase) {
+  const identityData = readJson(resolveAsset(rootDir, testCase.assets.identity));
+  assert.ok(identityData.keypair.encryptedPrivateKey);
+  assert.ok(!identityData.keypair.privateKey);
+  const hydrated = await Identity.from(identityData, { passphrase: testCase.expected.passphrase });
+  assert.strictEqual(hydrated.urn, identityData.urn);
+  const token = await hydrated.attest({ purpose: 'interop-encrypted-identity' });
+  assert.strictEqual((await validateVouchToken(token)).iss, hydrated.urn);
+}
+
 async function runTokenValidate(rootDir, testCase) {
   const token = readToken(resolveAsset(rootDir, testCase.assets.token));
   const decoded = await validateVouchToken(token);
@@ -84,6 +94,9 @@ export async function validateInteropAssets(rootDir, options = {}) {
       switch (testCase.type) {
         case 'identity_roundtrip':
           await runIdentityRoundtrip(rootDir, testCase);
+          break;
+        case 'identity_encrypted_roundtrip':
+          await runEncryptedIdentityRoundtrip(rootDir, testCase);
           break;
         case 'token_validate':
           await runTokenValidate(rootDir, testCase);
