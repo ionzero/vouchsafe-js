@@ -135,12 +135,12 @@ export async function writeInteropCorpus(outputDir, producer = 'js') {
   );
 
   const identities = {
-    leaf: leaf.toJSON(),
-    intermediate: intermediate.toJSON(),
-    root: root.toJSON(),
-    external: external.toJSON(),
-    protectedAscii: await protectedAsciiIdentity.toIdentityFile({ passphrase: protectedAsciiPassphrase }),
-    protectedUtf8: await protectedUtf8Identity.toIdentityFile({ passphrase: protectedUtf8Passphrase }),
+    leaf: await leaf.toObject({ unprotected_private_key: true }),
+    intermediate: await intermediate.toObject({ unprotected_private_key: true }),
+    root: await root.toObject({ unprotected_private_key: true }),
+    external: await external.toObject({ unprotected_private_key: true }),
+    protectedAscii: await protectedAsciiIdentity.toObject({ passphrase: protectedAsciiPassphrase }),
+    protectedUtf8: await protectedUtf8Identity.toObject({ passphrase: protectedUtf8Passphrase }),
   };
 
   const identityPaths = {};

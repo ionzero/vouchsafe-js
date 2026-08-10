@@ -135,4 +135,52 @@ describe('Vouchsafe CLI tools', function () {
         assert.match(prompts[0], /Enter passphrase/);
         assert.match(prompts[1], /same passphrase/i);
     });
+
+    it('rejects empty VOUCHSAFE_ASKPASS output instead of writing a plaintext key', async function () {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vouchsafe-empty-askpass-'));
+        const identityPath = path.join(dir, 'identity.json');
+        const askpassPath = path.join(dir, 'askpass.mjs');
+        fs.writeFileSync(askpassPath, "#!/usr/bin/env node\nprocess.stdout.write('\\n');\n", { mode: 0o700 });
+
+        await assert.rejects(
+            () => execFileAsync(process.execPath, [
+                path.join(packageRoot, 'src/bin/create_vouchsafe_id.mjs'),
+                '--label', 'empty-askpass-cli',
+                '--output', identityPath,
+            ], {
+                cwd: packageRoot,
+                env: { ...process.env, VOUCHSAFE_ASKPASS: askpassPath },
+            }),
+            error => {
+                assert.match(error.stderr, /empty passphrase requires --create-unencrypted-identity-file/i);
+                return true;
+            }
+        );
+        assert.ok(!fs.existsSync(identityPath));
+    });
+
+    it('encrypts an unencrypted existing identity by default', async function () {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vouchsafe-existing-'));
+        const sourcePath = path.join(dir, 'source.json');
+        const outputPath = path.join(dir, 'output.json');
+        const passphrasePath = path.join(dir, 'passphrase');
+        fs.writeFileSync(passphrasePath, 'correct horse battery staple\n', { mode: 0o600 });
+
+        await execFileAsync(process.execPath, [
+            path.join(packageRoot, 'src/bin/create_vouchsafe_id.mjs'),
+            '--label', 'existing-source',
+            '--create-unencrypted-identity-file',
+            '--output', sourcePath,
+        ], { cwd: packageRoot });
+        await execFileAsync(process.execPath, [
+            path.join(packageRoot, 'src/bin/create_vouchsafe_id.mjs'),
+            '--existing', sourcePath,
+            '--passphrase-file', passphrasePath,
+            '--output', outputPath,
+        ], { cwd: packageRoot });
+
+        const output = JSON.parse(fs.readFileSync(outputPath, 'utf8'));
+        assert.ok(output.keypair.encryptedPrivateKey);
+        assert.ok(!output.keypair.privateKey);
+    });
 });

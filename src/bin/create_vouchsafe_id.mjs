@@ -7,6 +7,7 @@ import { createVouchsafeIdentity, createVouchsafeIdentityFromKeypair, loadIdenti
 import { getNewIdentityPassphrase, getPassphrase } from './passphrase.mjs';
 
 const program = new Command();
+const MAX_IDENTITY_FILE_BYTES = 16 * 1024 * 1024;
 
 function toPem(label, base64Key) {
     const lines = base64Key.match(/.{1,64}/g).join('\n');
@@ -45,7 +46,7 @@ if (typeof label == 'undefined' && !options.existing) {
     process.exit();
 }
 
-if (label.length < 3) {
+if (label !== undefined && label.length < 3) {
     status('Label must be at least 3 characters in length');
     process.exit();
 }
@@ -60,6 +61,12 @@ if (options.quiet) {
 function readPemFile(filename) {
     const contents = fs.readFileSync(filename, 'utf8');
     return contents.replace(/^-----BEGIN .*?-----\n|\n-----END .*?-----\n?/g, '').replace(/\n/g, '');
+}
+
+function readIdentityFile(filename) {
+    const stats = fs.statSync(filename);
+    if (!stats.isFile() || stats.size > MAX_IDENTITY_FILE_BYTES) throw new Error('Identity file must be a regular file no larger than 16 MiB');
+    return JSON.parse(fs.readFileSync(filename, 'utf8'));
 }
 
 async function writeFile(path_or_handle, data, encoding) {
@@ -93,17 +100,20 @@ try {
       encrypt = !options.createUnencryptedIdentityFile;
       passphrase = await getNewIdentityPassphrase(options);
     } else if (options.existing) {
-        const filedata = fs.readFileSync(options.existing, 'utf8');
-        const identityFromFile = JSON.parse(filedata);
+        const identityFromFile = readIdentityFile(options.existing);
         const sourceIsEncrypted = typeof identityFromFile?.keypair?.encryptedPrivateKey === 'string';
         if (sourceIsEncrypted) {
             passphrase = await getPassphrase({
                 passphraseFile: options.passphraseFile,
                 prompt: 'Enter passphrase for existing identity: ',
             });
+        } else if (!options.createUnencryptedIdentityFile) {
+            passphrase = await getNewIdentityPassphrase(options);
+        } else if (options.passphraseFile) {
+            throw new Error('--create-unencrypted-identity-file cannot be used with --passphrase-file for an unencrypted source identity');
         }
         identity = await loadIdentity(identityFromFile, { passphrase });
-        encrypt = options.createUnencryptedIdentityFile ? false : sourceIsEncrypted;
+        encrypt = !options.createUnencryptedIdentityFile;
     } else {
         identity = await createVouchsafeIdentity(label);
         encrypt = !options.createUnencryptedIdentityFile;
@@ -113,7 +123,7 @@ try {
     if (options.separate && encrypt) throw new Error('--separate cannot be used for encrypted identity files; use --create-unencrypted-identity-file to opt in');
     if (!encrypt) console.error('Warning: creating an unencrypted identity file exposes private-key material.');
 
-    const identityFile = await serializeIdentity(identity, { passphrase: encrypt ? passphrase : '' });
+    const identityFile = await serializeIdentity(identity, encrypt ? { passphrase } : { unprotected_private_key: true });
 
     status(`Created identity: ${identity.urn}`);
     if (!options.separate) {

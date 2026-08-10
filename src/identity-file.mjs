@@ -6,6 +6,8 @@ export const VOUCHSAFE_IDENTITY_FILE_VERSION = '1.4.0';
 const PBKDF2_ITERATIONS = 600000;
 const MAX_PBKDF2_ITERATIONS = 5000000;
 const MAX_FIELD_LENGTH = 1024 * 1024;
+const MAX_ENCRYPTED_BLOB_LENGTH = 16 * 1024 * 1024;
+const MAX_ENCRYPTED_BLOB_BASE64_LENGTH = Math.ceil(MAX_ENCRYPTED_BLOB_LENGTH / 3) * 4;
 
 function decodeBase64(value, field) {
   if (typeof value !== 'string' || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value)) {
@@ -117,7 +119,12 @@ async function keyBinding(urn, publicKeyBase64, privateKeyBase64, expectedHash) 
 }
 
 function parseEncryptedBlob(base64) {
+  // Reject oversized text before Base64 decoding allocates the binary blob.
+  if (typeof base64 !== 'string' || base64.length > MAX_ENCRYPTED_BLOB_BASE64_LENGTH) {
+    throw new Error('Invalid encrypted private-key blob');
+  }
   const blob = decodeBase64(base64, 'encryptedPrivateKey');
+  if (blob.length > MAX_ENCRYPTED_BLOB_LENGTH) throw new Error('Invalid encrypted private-key blob');
   const state = { offset: 0 };
   const ciphername = readString(blob, state);
   const kdfname = readString(blob, state);
@@ -214,7 +221,18 @@ export async function loadIdentity(data, { passphrase } = {}) {
   return { urn: parsed.urn, keypair: { publicKey: parsed.publicKey, privateKey }, publicKeyHash, version: VOUCHSAFE_IDENTITY_FILE_VERSION };
 }
 
-export async function serializeIdentity(identity, { passphrase } = {}) {
+export async function serializeIdentity(identity, { passphrase, unprotected_private_key } = {}) {
+  const hasPassphrase = typeof passphrase === 'string' && passphrase.length > 0;
+  const allowUnprotectedPrivateKey = unprotected_private_key === true;
+  if (passphrase !== undefined && !hasPassphrase) {
+    throw new Error('A non-empty passphrase is required to encrypt an identity file');
+  }
+  if (unprotected_private_key !== undefined && !allowUnprotectedPrivateKey) {
+    throw new Error('unprotected_private_key must be true when specified');
+  }
+  if (hasPassphrase === allowUnprotectedPrivateKey) {
+    throw new Error('Set exactly one of passphrase or unprotected_private_key: true');
+  }
   const loaded = await loadIdentity({
     urn: identity?.urn,
     keypair: identity?.keypair,
@@ -222,7 +240,7 @@ export async function serializeIdentity(identity, { passphrase } = {}) {
     version: identity?.version,
   });
   const keypair = { publicKey: loaded.keypair.publicKey };
-  if (typeof passphrase === 'string' && passphrase.length > 0) {
+  if (hasPassphrase) {
     keypair.encryptedPrivateKey = await encryptPrivateKey(loaded.keypair.privateKey, passphrase);
   } else {
     keypair.privateKey = loaded.keypair.privateKey;

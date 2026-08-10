@@ -6,6 +6,7 @@ import { Identity } from '../index.mjs';
 import { getPassphrase } from './passphrase.mjs';
 
 const program = new Command();
+const MAX_IDENTITY_FILE_BYTES = 16 * 1024 * 1024;
 
 
 
@@ -92,6 +93,12 @@ function parseClaimsFile(filename) {
   throw new Error(`Claims file must be a JSON object: ${filename}`);
 }
 
+function readIdentityFile(filename) {
+  const stats = fs.statSync(filename);
+  if (!stats.isFile() || stats.size > MAX_IDENTITY_FILE_BYTES) throw new Error('Identity file must be a regular file no larger than 16 MiB');
+  return JSON.parse(fs.readFileSync(filename, 'utf8'));
+}
+
 function writeOut(pathOrStdout, data) {
   if (!pathOrStdout || pathOrStdout === '-') {
     process.stdout.write(data);
@@ -133,7 +140,7 @@ function resolveAction() {
     const action = resolveAction();
 
     // Load identity
-    const idJson = JSON.parse(fs.readFileSync(opts.identity, 'utf8'));
+    const idJson = readIdentityFile(opts.identity);
     const passphrase = typeof idJson?.keypair?.encryptedPrivateKey === 'string'
       ? await getPassphrase({ passphraseFile: opts.passphraseFile, prompt: 'Enter passphrase for identity: ' })
       : undefined;

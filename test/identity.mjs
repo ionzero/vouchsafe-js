@@ -144,10 +144,10 @@ describe('Identity class', function () {
     });
   });
 
-  describe('toJSON()', function () {
+  describe('toObject()', function () {
     it('round-trips via Identity.from()', async function () {
       const id = await Identity.create('roundtrip');
-      const json = id.toJSON();
+      const json = await id.toObject({ unprotected_private_key: true });
       assert.ok(json.urn && json.keypair && json.keypair.publicKey && json.keypair.privateKey);
 
       const again = await Identity.from(json);
@@ -162,6 +162,17 @@ describe('Identity class', function () {
       assert.strictEqual(p2.iss, id.urn);
       assert.strictEqual(p1.k, 1);
       assert.strictEqual(p2.k, 2);
+    });
+  });
+
+  describe('toJSON()', function () {
+    it('omits private-key material from the compatibility representation', async function () {
+      const id = await Identity.create('public-json');
+      const json = id.toJSON();
+
+      assert.ok(json.urn && json.keypair.publicKey);
+      assert.ok(!json.keypair.privateKey);
+      assert.ok(!json.keypair.encryptedPrivateKey);
     });
   });
 });

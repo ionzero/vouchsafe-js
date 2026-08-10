@@ -63,9 +63,14 @@ export async function getNewIdentityPassphrase(options) {
     if (options.passphraseFile) throw new Error('--create-unencrypted-identity-file cannot be used with --passphrase-file');
     return '';
   }
-  if (options.passphraseFile) return getPassphrase({ passphraseFile: options.passphraseFile, prompt: '' });
+  if (options.passphraseFile) {
+    const passphrase = await getPassphrase({ passphraseFile: options.passphraseFile, prompt: '' });
+    if (passphrase.length === 0) throw new Error('An empty passphrase requires --create-unencrypted-identity-file');
+    return passphrase;
+  }
   const passphrase = await getPassphrase({ prompt: 'Enter passphrase for new identity (empty for no passphrase): ' });
   const confirmation = await getPassphrase({ prompt: 'Enter same passphrase again: ' });
   if (passphrase !== confirmation) throw new Error('Passphrases do not match');
+  if (passphrase.length === 0) throw new Error('An empty passphrase requires --create-unencrypted-identity-file');
   return passphrase;
 }

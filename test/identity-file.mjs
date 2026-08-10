@@ -9,9 +9,9 @@ import {
 describe('Identity files', function () {
   this.timeout(15000);
 
-  it('writes and loads a spec-compliant unencrypted identity file', async function () {
+  it('writes and loads an explicitly unprotected identity file', async function () {
     const identity = await createVouchsafeIdentity('plain-file');
-    const file = await serializeIdentity(identity);
+    const file = await serializeIdentity(identity, { unprotected_private_key: true });
 
     assert.strictEqual(file.version, '1.4.0');
     assert.strictEqual(file.publicKeyHash, identity.publicKeyHash);
@@ -33,11 +33,22 @@ describe('Identity files', function () {
 
   it('rejects invalid key bindings and unsupported versions', async function () {
     const identity = await createVouchsafeIdentity('validation-file');
-    const file = await serializeIdentity(identity);
+    const file = await serializeIdentity(identity, { unprotected_private_key: true });
 
     await assert.rejects(() => loadIdentity({ ...file, publicKeyHash: 'a'.repeat(52) }), /publicKeyHash/);
     await assert.rejects(() => loadIdentity({ ...file, version: '2.0.0' }), /Unsupported/);
     await assert.rejects(() => loadIdentity({ ...file, keypair: { ...file.keypair, encryptedPrivateKey: 'AAAA', privateKey: file.keypair.privateKey } }), /exactly one/);
+  });
+
+  it('requires explicit encryption or unprotected-private-key serialization', async function () {
+    const identity = await createVouchsafeIdentity('serialization-options');
+
+    await assert.rejects(() => serializeIdentity(identity), /exactly one/);
+    await assert.rejects(() => serializeIdentity(identity, { passphrase: '' }), /non-empty passphrase/);
+    await assert.rejects(
+      () => serializeIdentity(identity, { passphrase: 'passphrase', unprotected_private_key: true }),
+      /exactly one/
+    );
   });
 
   it('loads legacy unencrypted JS identity data and normalizes it to 1.4.0', async function () {

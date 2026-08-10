@@ -639,8 +639,9 @@ Options:
 ```
 
 Identity files are encrypted by default. Without `--passphrase-file`, the command
-prompts twice for a passphrase. An empty confirmed passphrase creates an
-unencrypted file and emits a warning. `VOUCHSAFE_ASKPASS` may name an
+prompts twice for a non-empty passphrase. Use
+`--create-unencrypted-identity-file` to explicitly create an unencrypted file.
+`VOUCHSAFE_ASKPASS` may name an
 SSH_ASKPASS-compatible program: it receives the prompt as its sole argument and
 writes the passphrase to standard output.
 
@@ -740,7 +741,8 @@ Key methods:
 * `identity.vouch(subjectToken, claims)` - create a vouch token.
 * `identity.revoke(vouchToken, claims?)` - revoke a vouch.
 * `identity.verify(token)` - verify a single Vouchsafe token (signature + URN).
-* `identity.toJSON()` - export `{ urn, keypair }` for storage.
+* `await identity.toObject({ passphrase })` - export an encrypted identity file.
+* `await identity.toObject({ unprotected_private_key: true })` - explicitly export an unencrypted identity file.
 
 The Identity class is the recommended entry point unless you need low-level control.
 

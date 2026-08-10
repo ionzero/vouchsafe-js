@@ -92,14 +92,18 @@ export class Identity {
     return validateVouchToken(token);
   }
   // --- utilities ---
-  async toIdentityFile(options = {}) {
+  async toObject(options) {
     return serializeIdentity(this, options);
+  }
+
+  async toIdentityFile(options = {}) {
+    return this.toObject(options);
   }
 
   toJSON() {
     return {
       urn: this.urn,
-      keypair: this.keypair,
+      keypair: { publicKey: this.keypair.publicKey },
       publicKeyHash: this.publicKeyHash,
       version: this.version,
     };
