@@ -8,6 +8,7 @@ import {
     createAttestation,
     createVouchToken,
     createBurnToken,
+    createRevokeToken,
     decodeToken,
     validateTrustChain
 } from "../src/index.mjs";
@@ -556,6 +557,77 @@ describe("Vouchsafe evaluator - fresh-minted identities each test", function () 
 
         assert.equal(res.valid, true);
         assert.ok(res.chains.length >= 1);
+    });
+
+    it('rejects non-array token input before evaluating a chain', async function () {
+        await assert.rejects(
+            () => validateTrustChain(leafAttest, leafAttest, trustedIssuers, ['msg-signing']),
+            { name: 'TypeError', message: 'tokens must be an array' }
+        );
+    });
+
+    it('rejects invalid maxTokens values precisely', async function () {
+        await assert.rejects(
+            () => validateTrustChain(tokens, leafAttest, trustedIssuers, ['msg-signing'], { maxTokens: 0 }),
+            /maxTokens must be a positive integer or Infinity/
+        );
+    });
+
+    it('rejects invalid maxDepth values precisely', async function () {
+        await assert.rejects(
+            () => validateTrustChain(tokens, leafAttest, trustedIssuers, ['msg-signing'], { maxDepth: -1 }),
+            /maxDepth must be a non-negative integer or Infinity/
+        );
+    });
+
+    it('adds an omitted subject token to the token set', async function () {
+        const result = await validateTrustChain(
+            tokens.filter(token => token !== leafAttest),
+            leafAttest,
+            trustedIssuers,
+            ['msg-signing']
+        );
+
+        assert.strictEqual(result.valid, true);
+    });
+
+    it('accepts a directly trusted token with maxDepth zero', async function () {
+        const direct = await createAttestation(root.urn, root.keypair, { purpose: 'msg-signing' });
+
+        const result = await validateTrustChain(
+            [direct],
+            direct,
+            { [root.urn]: ['msg-signing'] },
+            ['msg-signing'],
+            { maxDepth: 0 }
+        );
+
+        assert.strictEqual(result.valid, true);
+    });
+
+    it('does not let a different issuer revoke a vouch', async function () {
+        const leaf = await createVouchsafeIdentity('revoke-leaf');
+        const root = await createVouchsafeIdentity('revoke-root');
+        const attacker = await createVouchsafeIdentity('revoke-attacker');
+        const purpose = 'msg-signing';
+        const leafToken = await createAttestation(leaf.urn, leaf.keypair, { purpose });
+        const rootVouch = await createVouchToken(leafToken, root.urn, root.keypair, { purpose });
+        const rootPayload = decodeJwt(rootVouch);
+        const forgedRevoke = await createRevokeToken({
+            sub: rootPayload.sub,
+            vch_iss: rootPayload.vch_iss,
+            vch_sum: rootPayload.vch_sum,
+            revokes: rootPayload.jti,
+        }, attacker.urn, attacker.keypair);
+
+        const result = await validateTrustChain(
+            [leafToken, rootVouch, forgedRevoke],
+            leafToken,
+            { [root.urn]: [purpose] },
+            [purpose]
+        );
+
+        assert.strictEqual(result.valid, true);
     });
 
 });

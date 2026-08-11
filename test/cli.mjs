@@ -183,4 +183,52 @@ describe('Vouchsafe CLI tools', function () {
         assert.ok(output.keypair.encryptedPrivateKey);
         assert.ok(!output.keypair.privateKey);
     });
+
+    it('prints requested nested and missing fields without other output', async function () {
+        const identity = await createVouchsafeIdentity('field-output');
+        const token = await createAttestation(identity.urn, identity.keypair, {
+            purpose: 'msg-signing',
+            metadata: { region: 'eu' },
+        });
+
+        const { stdout } = await execFileAsync(process.execPath, [
+            path.join(packageRoot, 'src/bin/verify_vouchsafe_token.mjs'),
+            '-T', token,
+            '-f', 'metadata.region',
+            '-f', 'missing',
+        ], { cwd: packageRoot });
+
+        assert.strictEqual(stdout, 'eu\n\n');
+    });
+
+    it('rejects extended verification without a required purpose', async function () {
+        const identity = await createVouchsafeIdentity('extended-purpose');
+        const token = await createAttestation(identity.urn, identity.keypair, { purpose: 'msg-signing' });
+
+        await assert.rejects(
+            () => execFileAsync(process.execPath, [
+                path.join(packageRoot, 'src/bin/verify_vouchsafe_token.mjs'),
+                '-E',
+                '-T', token,
+            ], { cwd: packageRoot }),
+            error => error.code === 2 && /requires at least one -p/i.test(error.stderr)
+        );
+    });
+
+    it('rejects mutually exclusive token creation actions', async function () {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vouchsafe-actions-'));
+        const identity = await createVouchsafeIdentity('action-identity');
+        const identityPath = path.join(dir, 'identity.json');
+        fs.writeFileSync(identityPath, JSON.stringify({ urn: identity.urn, keypair: identity.keypair }), 'utf8');
+
+        await assert.rejects(
+            () => execFileAsync(process.execPath, [
+                path.join(packageRoot, 'src/bin/create_vouchsafe_token.mjs'),
+                '--identity', identityPath,
+                '--attest',
+                '--vouch',
+            ], { cwd: packageRoot }),
+            error => /Choose only one/.test(error.stderr)
+        );
+    });
 });

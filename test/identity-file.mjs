@@ -59,4 +59,28 @@ describe('Identity files', function () {
     assert.strictEqual(loaded.version, '1.4.0');
     assert.strictEqual(loaded.publicKeyHash, identity.publicKeyHash);
   });
+
+  it('rejects non-object and incomplete identity-file shapes', async function () {
+    await assert.rejects(() => loadIdentity(null), /JSON object with a keypair/);
+    await assert.rejects(() => loadIdentity([]), /JSON object with a keypair/);
+    await assert.rejects(() => loadIdentity({ keypair: {} }), /missing urn or keypair.publicKey/);
+  });
+
+  it('rejects an encrypted identity with malformed Base64 before decryption', async function () {
+    const identity = await createVouchsafeIdentity('malformed-encrypted');
+    const file = await serializeIdentity(identity, { passphrase: 'p@ssphrase' });
+    file.keypair.encryptedPrivateKey = 'not base64!';
+
+    await assert.rejects(
+      () => loadIdentity(file, { passphrase: 'p@ssphrase' }),
+      /Unable to decrypt identity private key/
+    );
+  });
+
+  it('round-trips an encrypted identity with punctuation in the passphrase', async function () {
+    const identity = await createVouchsafeIdentity('unicode-passphrase');
+    const file = await serializeIdentity(identity, { passphrase: 'pa$$phrase-123' });
+
+    assert.deepStrictEqual(await loadIdentity(file, { passphrase: 'pa$$phrase-123' }), identity);
+  });
 });
