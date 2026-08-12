@@ -4,11 +4,13 @@ import path from 'path';
 
 import {
   Identity,
+  VOUCHSAFE_SPEC_VERSION,
   validateTrustChain,
   validateVouchToken,
   verifyUrnMatchesKey,
   verifyVouchToken,
 } from '../src/index.mjs';
+import { INTEROP_SCHEMA_VERSION } from './interop-corpus.mjs';
 
 function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, 'utf8'));
@@ -23,7 +25,38 @@ function readBundle(filePath) {
 }
 
 function resolveAsset(rootDir, relativePath) {
-  return path.join(rootDir, relativePath);
+  if (typeof relativePath !== 'string' || !relativePath) {
+    throw new Error('Interop asset path must be a non-empty relative path');
+  }
+  const resolvedRoot = path.resolve(rootDir);
+  const resolvedAsset = path.resolve(resolvedRoot, relativePath);
+  if (path.isAbsolute(relativePath) || (resolvedAsset !== resolvedRoot && !resolvedAsset.startsWith(`${resolvedRoot}${path.sep}`))) {
+    throw new Error(`Interop asset path escapes corpus directory: ${relativePath}`);
+  }
+  if (!fs.existsSync(resolvedAsset)) {
+    throw new Error(`Interop asset does not exist: ${relativePath}`);
+  }
+  return resolvedAsset;
+}
+
+function validateManifest(manifest) {
+  if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) throw new Error('Interop manifest must be a JSON object');
+  if (manifest.schema_version !== INTEROP_SCHEMA_VERSION) throw new Error(`Unsupported interoperability schema version: ${manifest.schema_version}`);
+  if (manifest.spec_version !== VOUCHSAFE_SPEC_VERSION) throw new Error(`Unsupported Vouchsafe specification version: ${manifest.spec_version}`);
+  if (typeof manifest.expires_at !== 'number' || !Number.isFinite(manifest.expires_at)) throw new Error('Interop manifest must include a numeric expires_at');
+  if (manifest.expires_at <= Math.floor(Date.now() / 1000)) throw new Error('Interop manifest has expired');
+  if (!Array.isArray(manifest.test_cases)) throw new Error('Interop manifest test_cases must be an array');
+
+  const names = new Set();
+  for (const testCase of manifest.test_cases) {
+    if (!testCase || typeof testCase !== 'object' || Array.isArray(testCase)) throw new Error('Interop test case must be an object');
+    if (typeof testCase.name !== 'string' || !testCase.name) throw new Error('Interop test case must include a name');
+    if (names.has(testCase.name)) throw new Error(`Duplicate interoperability test case name: ${testCase.name}`);
+    names.add(testCase.name);
+    if (typeof testCase.type !== 'string' || !testCase.type) throw new Error(`Interop test case ${testCase.name} must include a type`);
+    if (!testCase.assets || typeof testCase.assets !== 'object' || Array.isArray(testCase.assets)) throw new Error(`Interop test case ${testCase.name} must include assets`);
+    if (testCase.expected !== undefined && (!testCase.expected || typeof testCase.expected !== 'object' || Array.isArray(testCase.expected))) throw new Error(`Interop test case ${testCase.name} has an invalid expected value`);
+  }
 }
 
 async function runIdentityRoundtrip(rootDir, testCase) {
@@ -41,6 +74,11 @@ async function runEncryptedIdentityRoundtrip(rootDir, testCase) {
   assert.strictEqual(hydrated.urn, identityData.urn);
   const token = await hydrated.attest({ purpose: 'interop-encrypted-identity' });
   assert.strictEqual((await validateVouchToken(token)).iss, hydrated.urn);
+}
+
+async function runIdentityReject(rootDir, testCase) {
+  const identityData = readJson(resolveAsset(rootDir, testCase.assets.identity));
+  await assert.rejects(() => Identity.from(identityData, { passphrase: testCase.expected?.passphrase }));
 }
 
 async function runTokenValidate(rootDir, testCase) {
@@ -84,9 +122,16 @@ async function runVouchReject(rootDir, testCase) {
   await assert.rejects(() => issuer.vouch(subjectToken, { purpose: testCase.expected.purpose }));
 }
 
+async function runVouchVerifyReject(rootDir, testCase) {
+  const token = readToken(resolveAsset(rootDir, testCase.assets.token));
+  const subjectToken = readToken(resolveAsset(rootDir, testCase.assets.subject_token));
+  await assert.rejects(() => verifyVouchToken(token, subjectToken));
+}
+
 export async function validateInteropAssets(rootDir, options = {}) {
   const { skipUnknownTypes = false, continueOnFailure = false } = options;
   const manifest = readJson(path.join(rootDir, 'manifest.json'));
+  validateManifest(manifest);
   const results = [];
 
   for (const testCase of manifest.test_cases || []) {
@@ -97,6 +142,9 @@ export async function validateInteropAssets(rootDir, options = {}) {
           break;
         case 'identity_encrypted_roundtrip':
           await runEncryptedIdentityRoundtrip(rootDir, testCase);
+          break;
+        case 'identity_reject':
+          await runIdentityReject(rootDir, testCase);
           break;
         case 'token_validate':
           await runTokenValidate(rootDir, testCase);
@@ -115,6 +163,9 @@ export async function validateInteropAssets(rootDir, options = {}) {
           break;
         case 'vouch_reject':
           await runVouchReject(rootDir, testCase);
+          break;
+        case 'vouch_verify_reject':
+          await runVouchVerifyReject(rootDir, testCase);
           break;
         default:
           if (skipUnknownTypes) {
