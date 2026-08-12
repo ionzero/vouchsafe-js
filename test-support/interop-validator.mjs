@@ -4,13 +4,12 @@ import path from 'path';
 
 import {
   Identity,
-  VOUCHSAFE_SPEC_VERSION,
   validateTrustChain,
   validateVouchToken,
   verifyUrnMatchesKey,
   verifyVouchToken,
 } from '../src/index.mjs';
-import { INTEROP_SCHEMA_VERSION } from './interop-corpus.mjs';
+import { INTEROP_CORPUS_VERSION, INTEROP_SCHEMA_VERSION } from './interop-corpus.mjs';
 
 function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, 'utf8'));
@@ -42,7 +41,7 @@ function resolveAsset(rootDir, relativePath) {
 function validateManifest(manifest, { warn }) {
   if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) throw new Error('Interop manifest must be a JSON object');
   if (manifest.schema_version !== INTEROP_SCHEMA_VERSION) throw new Error(`Unsupported interoperability schema version: ${manifest.schema_version}`);
-  if (manifest.spec_version !== VOUCHSAFE_SPEC_VERSION) {
+  if (manifest.spec_version !== INTEROP_CORPUS_VERSION) {
     warn(`Warning: attempting corpus with unrecognized Vouchsafe specification version: ${manifest.spec_version}`);
   }
   if (typeof manifest.expires_at !== 'number' || !Number.isFinite(manifest.expires_at)) throw new Error('Interop manifest must include a numeric expires_at');

@@ -5,7 +5,6 @@ import path from 'path';
 
 import {
   Identity,
-  VOUCHSAFE_SPEC_VERSION,
   createBurnToken,
   createJwt,
   decodeJwt,
@@ -13,6 +12,7 @@ import {
 } from '../src/index.mjs';
 
 export const INTEROP_SCHEMA_VERSION = 1;
+export const INTEROP_CORPUS_VERSION = '2.0.1';
 
 function rel(rootDir, targetPath) {
   return path.relative(rootDir, targetPath).split(path.sep).join('/');
@@ -299,7 +299,7 @@ export async function writeInteropCorpus(outputDir, producer = 'js') {
   const manifest = {
     schema_version: INTEROP_SCHEMA_VERSION,
     producer,
-    spec_version: VOUCHSAFE_SPEC_VERSION,
+    spec_version: INTEROP_CORPUS_VERSION,
     generated_at: now,
     expires_at: expiry,
     test_cases: [

@@ -3,7 +3,7 @@ import assert from 'assert';
 import os from 'os';
 import path from 'path';
 
-import { writeInteropCorpus } from '../test-support/interop-corpus.mjs';
+import { INTEROP_CORPUS_VERSION, writeInteropCorpus } from '../test-support/interop-corpus.mjs';
 import { validateInteropAssets } from '../test-support/interop-validator.mjs';
 
 function makeTempDir(prefix) {
@@ -17,6 +17,7 @@ describe('Runtime interoperability corpus', function () {
   it('generates and validates a JS-produced asset corpus locally', async function () {
     const dir = makeTempDir('vouchsafe-js-interop-');
     const { manifest } = await writeInteropCorpus(dir, 'js');
+    assert.strictEqual(manifest.spec_version, INTEROP_CORPUS_VERSION);
     const protectedCases = manifest.test_cases.filter(testCase => testCase.type === 'identity_encrypted_roundtrip');
     assert.strictEqual(protectedCases.length, 2);
     for (const protectedCase of protectedCases) {
@@ -69,12 +70,12 @@ describe('Runtime interoperability corpus', function () {
     const dir = makeTempDir('vouchsafe-js-interop-');
     const { manifest } = await writeInteropCorpus(dir, 'js');
     const warnings = [];
-    fs.writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify({ ...manifest, spec_version: '2.0.1' }));
+    fs.writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify({ ...manifest, spec_version: 'future-version' }));
 
     const result = await validateInteropAssets(dir, { warn: (message) => warnings.push(message) });
 
     assert.strictEqual(result.failed, 0);
-    assert.deepStrictEqual(warnings, ['Warning: attempting corpus with unrecognized Vouchsafe specification version: 2.0.1']);
+    assert.deepStrictEqual(warnings, ['Warning: attempting corpus with unrecognized Vouchsafe specification version: future-version']);
   });
 
   it('rejects corpus assets that escape the corpus directory', async function () {
