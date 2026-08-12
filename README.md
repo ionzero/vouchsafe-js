@@ -615,7 +615,7 @@ Example output:
     "encryptedPrivateKey": "<base64-encoded encrypted private-key blob>"
   },
   "publicKeyHash": "tp5yr5uvfgbmwba3jdmqrar4rqu5rsbkz6nqqyuw75zxpdzgvhsq",
-  "version": "1.4.0"
+  "version": "2.1.0"
 }
 ```
 

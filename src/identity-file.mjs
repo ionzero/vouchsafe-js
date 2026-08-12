@@ -1,7 +1,7 @@
 import { base32Encode } from './utils.mjs';
 import { sha256 } from './crypto/index.mjs';
 
-export const VOUCHSAFE_IDENTITY_FILE_VERSION = '1.4.0';
+export const VOUCHSAFE_IDENTITY_FILE_VERSION = '2.1.0';
 
 const PBKDF2_ITERATIONS = 600000;
 const MAX_PBKDF2_ITERATIONS = 5000000;
@@ -197,11 +197,10 @@ function parseIdentityFile(data) {
   const hasEncryptedPrivateKey = typeof keypair.encryptedPrivateKey === 'string';
   if (hasPrivateKey === hasEncryptedPrivateKey) throw new Error('Identity file must contain exactly one private-key field');
 
-  const legacy = data.version === undefined && data.publicKeyHash === undefined && hasPrivateKey;
-  if (!legacy && (typeof data.publicKeyHash !== 'string' || !/^1\.4\.\d+$/.test(data.version))) {
-    throw new Error('Unsupported or incomplete identity file version');
+  if (data.publicKeyHash !== undefined && typeof data.publicKeyHash !== 'string') {
+    throw new Error('Identity publicKeyHash must be a string when specified');
   }
-  return { urn, publicKey: keypair.publicKey, privateKey: keypair.privateKey, encryptedPrivateKey: keypair.encryptedPrivateKey, publicKeyHash: data.publicKeyHash, version: data.version, legacy };
+  return { urn, publicKey: keypair.publicKey, privateKey: keypair.privateKey, encryptedPrivateKey: keypair.encryptedPrivateKey, publicKeyHash: data.publicKeyHash, version: data.version };
 }
 
 export async function loadIdentity(data, { passphrase } = {}) {

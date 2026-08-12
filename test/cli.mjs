@@ -184,6 +184,32 @@ describe('Vouchsafe CLI tools', function () {
         assert.ok(!output.keypair.privateKey);
     });
 
+    it('loads an existing identity file with an unknown version', async function () {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vouchsafe-existing-version-'));
+        const sourcePath = path.join(dir, 'source.json');
+        const outputPath = path.join(dir, 'output.json');
+        const passphrasePath = path.join(dir, 'passphrase');
+        const identity = await createVouchsafeIdentity('existing-version');
+        fs.writeFileSync(sourcePath, JSON.stringify({
+            urn: identity.urn,
+            keypair: identity.keypair,
+            version: '2.0.0',
+        }), 'utf8');
+        fs.writeFileSync(passphrasePath, 'correct horse battery staple\n', { mode: 0o600 });
+
+        await execFileAsync(process.execPath, [
+            path.join(packageRoot, 'src/bin/create_vouchsafe_id.mjs'),
+            '--existing', sourcePath,
+            '--passphrase-file', passphrasePath,
+            '--output', outputPath,
+        ], { cwd: packageRoot });
+
+        const output = JSON.parse(fs.readFileSync(outputPath, 'utf8'));
+        assert.strictEqual(output.urn, identity.urn);
+        assert.strictEqual(output.version, '2.1.0');
+        assert.ok(output.keypair.encryptedPrivateKey);
+    });
+
     it('prints requested nested and missing fields without other output', async function () {
         const identity = await createVouchsafeIdentity('field-output');
         const token = await createAttestation(identity.urn, identity.keypair, {

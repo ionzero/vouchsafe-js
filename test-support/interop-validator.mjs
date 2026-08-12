@@ -39,10 +39,12 @@ function resolveAsset(rootDir, relativePath) {
   return resolvedAsset;
 }
 
-function validateManifest(manifest) {
+function validateManifest(manifest, { warn }) {
   if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) throw new Error('Interop manifest must be a JSON object');
   if (manifest.schema_version !== INTEROP_SCHEMA_VERSION) throw new Error(`Unsupported interoperability schema version: ${manifest.schema_version}`);
-  if (manifest.spec_version !== VOUCHSAFE_SPEC_VERSION) throw new Error(`Unsupported Vouchsafe specification version: ${manifest.spec_version}`);
+  if (manifest.spec_version !== VOUCHSAFE_SPEC_VERSION) {
+    warn(`Warning: attempting corpus with unrecognized Vouchsafe specification version: ${manifest.spec_version}`);
+  }
   if (typeof manifest.expires_at !== 'number' || !Number.isFinite(manifest.expires_at)) throw new Error('Interop manifest must include a numeric expires_at');
   if (manifest.expires_at <= Math.floor(Date.now() / 1000)) throw new Error('Interop manifest has expired');
   if (!Array.isArray(manifest.test_cases)) throw new Error('Interop manifest test_cases must be an array');
@@ -129,9 +131,9 @@ async function runVouchVerifyReject(rootDir, testCase) {
 }
 
 export async function validateInteropAssets(rootDir, options = {}) {
-  const { skipUnknownTypes = false, continueOnFailure = false } = options;
+  const { skipUnknownTypes = false, continueOnFailure = false, warn = console.warn } = options;
   const manifest = readJson(path.join(rootDir, 'manifest.json'));
-  validateManifest(manifest);
+  validateManifest(manifest, { warn });
   const results = [];
 
   for (const testCase of manifest.test_cases || []) {

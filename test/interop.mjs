@@ -53,7 +53,7 @@ describe('Runtime interoperability corpus', function () {
     for (const name of requiredCases) assert.ok(caseNames.has(name), `Missing interop case: ${name}`);
   });
 
-  it('rejects expired and incompatible corpus manifests before reading assets', async function () {
+  it('rejects expired and incompatible-schema corpus manifests before reading assets', async function () {
     const dir = makeTempDir('vouchsafe-js-interop-');
     const { manifest } = await writeInteropCorpus(dir, 'js');
     const manifestPath = path.join(dir, 'manifest.json');
@@ -63,6 +63,18 @@ describe('Runtime interoperability corpus', function () {
 
     fs.writeFileSync(manifestPath, JSON.stringify({ ...manifest, schema_version: 999 }));
     await assert.rejects(() => validateInteropAssets(dir), /Unsupported interoperability schema version/);
+  });
+
+  it('validates a corpus with an unknown specification version after warning', async function () {
+    const dir = makeTempDir('vouchsafe-js-interop-');
+    const { manifest } = await writeInteropCorpus(dir, 'js');
+    const warnings = [];
+    fs.writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify({ ...manifest, spec_version: '2.0.1' }));
+
+    const result = await validateInteropAssets(dir, { warn: (message) => warnings.push(message) });
+
+    assert.strictEqual(result.failed, 0);
+    assert.deepStrictEqual(warnings, ['Warning: attempting corpus with unrecognized Vouchsafe specification version: 2.0.1']);
   });
 
   it('rejects corpus assets that escape the corpus directory', async function () {
